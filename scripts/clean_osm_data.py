@@ -17,18 +17,18 @@ from _helpers import REGION_COLS, configure_logging, save_to_geojson, to_csv_naf
 logger = logging.getLogger(__name__)
 
 
-def prepare_substation_df(df_all_substations):
+def prepare_substation_df(df_all_buses):
     """
     Prepare raw substations dataframe to the structure compatible with PyPSA-
     Eur.
 
     Parameters
     ----------
-    df_all_substations : dataframe
+    df_all_buses : dataframe
         Raw substations dataframe as downloaded from OpenStreetMap
     """
     # Modify the naming of the DataFrame columns to adapt to the PyPSA-Eur-like format
-    df_all_substations = df_all_substations.rename(
+    df_all_buses = df_all_buses.rename(
         columns={
             "id": "bus_id",
             "tags.voltage": "voltage",
@@ -43,12 +43,12 @@ def prepare_substation_df(df_all_substations):
     )
 
     # Add longitude (lon) and latitude (lat) coordinates in the dataset
-    df_all_substations["lon"] = df_all_substations["geometry"].x
-    df_all_substations["lat"] = df_all_substations["geometry"].y
+    df_all_buses["lon"] = df_all_buses["geometry"].x
+    df_all_buses["lat"] = df_all_buses["geometry"].y
 
     # Initialize columns to default value
-    df_all_substations["dc"] = False
-    df_all_substations["under_construction"] = False
+    df_all_buses["dc"] = False
+    df_all_buses["under_construction"] = False
 
     # Rearrange columns
     clist = [
@@ -68,12 +68,17 @@ def prepare_substation_df(df_all_substations):
 
     # Check. If column is not in df create an empty one.
     for c in clist:
-        if c not in df_all_substations:
-            df_all_substations[c] = np.nan
+        if c not in df_all_buses:
+            df_all_buses[c] = np.nan
 
-    df_all_substations = df_all_substations[clist]
+    df_all_buses.drop(
+        df_all_buses.columns[~df_all_buses.columns.isin(clist)],
+        axis=1,
+        inplace=True,
+        errors="ignore",
+    )
 
-    return df_all_substations
+    return df_all_buses
 
 
 def add_line_endings_tosubstations(substations, lines):
@@ -196,8 +201,13 @@ def filter_voltage(df, threshold_voltage=35000):
     # convert voltage to int
     df["voltage"] = df["voltage"].astype(int)
 
-    # keep only lines with a voltage no lower than than threshold_voltage
-    df = df[df.voltage >= threshold_voltage]
+    # drop lines with a voltage lower than than threshold_voltage
+    df.drop(
+        df[df.voltage < threshold_voltage].index,
+        axis=0,
+        inplace=True,
+        errors="ignore",
+    )
 
     return df
 
@@ -238,14 +248,14 @@ def filter_circuits(df, min_value_circuit=0.1):
     return df
 
 
-def finalize_substation_types(df_all_substations):
+def finalize_substation_types(df_all_buses):
     """
     Specify bus_id and voltage columns as integer.
     """
-    df_all_substations["bus_id"] = df_all_substations["bus_id"].astype(int)
-    df_all_substations["voltage"] = df_all_substations["voltage"].astype(int)
+    df_all_buses["bus_id"] = df_all_buses["bus_id"].astype(int)
+    df_all_buses["voltage"] = df_all_buses["voltage"].astype(int)
 
-    return df_all_substations
+    return df_all_buses
 
 
 def prepare_lines_df(df_lines):
@@ -295,7 +305,12 @@ def prepare_lines_df(df_lines):
         if c not in df_lines:
             df_lines[c] = np.nan
 
-    df_lines = df_lines[clist]
+    df_lines.drop(
+        df_lines.columns[~df_lines.columns.isin(clist)],
+        axis=1,
+        inplace=True,
+        errors="ignore",
+    )
 
     return df_lines
 
@@ -713,6 +728,29 @@ def filter_lines_by_geometry(df_all_lines):
     return df_all_lines
 
 
+def drop_external_shapes(df_region, df, only_boundary=False):
+    """
+    Function to drop external shapes from GeoDataFrames.
+
+    Parameters
+    ----------
+    df_region : GeoDataFrame
+        GeoDataFrame with the shape of the considered region
+    df : GeoDataFrame
+        GeoDataFrame to be cleaned
+    only_boundary : bool
+        If True, only the boundary of df is considered
+        If False, the whole geometry of df is considered
+    """
+    geom_obj = df.geometry.boundary if only_boundary else df.geometry
+    contain_all = gpd.sjoin(df_region, geom_obj.to_frame(), predicate="contains")
+
+    missing_ids = df.index.difference(contain_all.index_right)
+    df.drop(index=missing_ids, inplace=True, errors="ignore")
+
+    return df
+
+
 def prepare_generators_df(df_all_generators):
     """
     Prepare the dataframe for generators.
@@ -747,52 +785,52 @@ def prepare_generators_df(df_all_generators):
     return df_all_generators
 
 
-def find_first_overlap(geom, country_geoms, default_name):
-    """
-    Return the first index whose shape intersects the geometry.
-    """
-    for c_name, c_geom in country_geoms.items():
-        if not geom.disjoint(c_geom):
-            return c_name
-    return default_name
-
-
 def set_countryname_by_shape(
     df,
     ext_country_shapes,
-    exclude_external=True,
     col_country="country",
 ):
     "Set the country name by the name shape"
-    df[col_country] = [
-        find_first_overlap(
-            row["geometry"],
-            ext_country_shapes,
-            None if exclude_external else row[col_country],
-        )
-        for id, row in df.iterrows()
-    ]
+
+    # use auxiliary spatial join to determine the country of each line, keep first occurrence only
+    df_m = gpd.sjoin_nearest(
+        df.drop(columns=[col_country], errors="ignore"),
+        ext_country_shapes,
+        how="left",
+        max_distance=0.01,
+    ).reset_index()
+    df_m.drop_duplicates(subset="index", inplace=True)
+    df_m.rename(columns={"index_right": col_country}, inplace=True)
+    df_m.set_index("index", inplace=True)
+
+    # set country name to original dataframe
+    df.loc[df_m.index, col_country] = df_m[col_country]
     df.dropna(subset=[col_country], inplace=True)
     return df
 
 
-def create_extended_country_shapes(country_shapes, offshore_shapes):
+def create_extended_country_shapes(country_shapes, offshore_shapes, tolerance=0.01):
     """
     Obtain the extended country shape by merging on- and off-shore shapes.
     """
 
-    merged_shapes = gpd.GeoDataFrame(
-        {
-            "name": list(country_shapes.index),
-            "geometry": [
-                c_geom.unary_union(offshore_shapes[c_code])
-                if c_code in offshore_shapes
-                else c_geom
-                for c_code, c_geom in country_shapes.items()
-            ],
-        },
-        crs=country_shapes.crs,
-    ).set_index("name")["geometry"]
+    merged_shapes = (
+        gpd.GeoDataFrame(
+            {
+                "name": list(country_shapes.index),
+                "geometry": [
+                    c_geom.unary_union(offshore_shapes[c_code])
+                    if c_code in offshore_shapes
+                    else c_geom
+                    for c_code, c_geom in country_shapes.items()
+                ],
+            },
+            crs=country_shapes.crs,
+        )
+        .set_index("name")["geometry"]
+        .buffer(tolerance)
+        .to_frame()
+    )
 
     return merged_shapes
 
@@ -819,7 +857,7 @@ def set_name_by_closestcity(df_all_generators, colname="name"):
 def clean_data(
     input_files,
     output_files,
-    africa_shape,
+    df_region,
     geo_crs,
     distance_crs,
     ext_country_shapes=None,
@@ -876,11 +914,7 @@ def clean_data(
         logger.info("Select lines and cables in the region of interest")
 
         # drop lines crossing regions with and without the region under interest
-        df_all_lines = df_all_lines[
-            df_all_lines.apply(
-                lambda x: africa_shape.contains(x.geometry.boundary), axis=1
-            )
-        ]
+        drop_external_shapes(df_region, df_all_lines, only_boundary=True)
 
         df_all_lines = gpd.GeoDataFrame(df_all_lines, geometry="geometry")
 
@@ -901,60 +935,63 @@ def clean_data(
     logger.info("Process OSM substations")
 
     if os.path.getsize(input_files["substations"]) > 0:
-        df_all_substations = gpd.read_file(input_files["substations"])
+        df_all_buses = gpd.read_file(input_files["substations"])
 
         # prepare dataset for substations
-        df_all_substations = prepare_substation_df(df_all_substations)
+        df_all_buses = prepare_substation_df(df_all_buses)
 
         # filter substations by tag
         if tag_substation:  # if the string is not empty check it
-            df_all_substations = df_all_substations[
-                df_all_substations["tag_substation"] == tag_substation
+            df_all_buses = df_all_buses[
+                df_all_buses["tag_substation"] == tag_substation
             ]
 
         # clean voltage and make sure it is string
-        df_all_substations = clean_voltage(df_all_substations)
+        df_all_buses = clean_voltage(df_all_buses)
 
-        df_all_substations = gpd.GeoDataFrame(
-            split_cells(pd.DataFrame(df_all_substations)),
-            crs=df_all_substations.crs,
+        df_all_buses = gpd.GeoDataFrame(
+            split_cells(pd.DataFrame(df_all_buses)),
+            crs=df_all_buses.crs,
         )
 
         # add line endings if option is enabled
         if add_line_endings:
-            df_all_substations = add_line_endings_tosubstations(
-                df_all_substations, df_all_lines
-            )
+            df_all_buses = add_line_endings_tosubstations(df_all_buses, df_all_lines)
 
         # drop substations with nan geometry
-        df_all_substations.dropna(subset=["geometry"], axis=0, inplace=True)
+        df_all_buses.dropna(subset=["geometry"], axis=0, inplace=True)
 
         # filter substation by voltage
-        df_all_substations = filter_voltage(df_all_substations, threshold_voltage)
+        df_all_buses = filter_voltage(df_all_buses, threshold_voltage)
 
         # finalize dataframe types
-        df_all_substations = finalize_substation_types(df_all_substations)
+        df_all_buses = finalize_substation_types(df_all_buses)
 
         # save to geojson file
-        df_all_substations = gpd.GeoDataFrame(df_all_substations, geometry="geometry")
+        df_all_buses = gpd.GeoDataFrame(df_all_buses, geometry="geometry")
+
+        logger.info("Select buses in the region of interest")
+
+        # drop lines crossing regions with and without the region under interest
+        drop_external_shapes(df_region, df_all_buses, only_boundary=False)
 
         if names_by_shapes:
             # set the country name by the shape
             logger.info("Setting substations country name using the GADM shapes")
-            df_all_substations = set_countryname_by_shape(
-                df_all_substations,
+            df_all_buses = set_countryname_by_shape(
+                df_all_buses,
                 ext_country_shapes,
             )
 
         # set unique bus ids
-        df_all_substations = set_unique_id(df_all_substations, "bus_id")
+        df_all_buses = set_unique_id(df_all_buses, "bus_id")
     else:
         logger.info("No OSM substations")
-        df_all_substations = gpd.GeoDataFrame()
+        df_all_buses = gpd.GeoDataFrame()
 
     # save substations output
     logger.info("Saving substations output")
-    save_to_geojson(df_all_substations, output_files["substations"])
+    save_to_geojson(df_all_buses, output_files["substations"])
 
     # ----------- GENERATORS -----------
 
@@ -1016,7 +1053,7 @@ if __name__ == "__main__":
     input_files = snakemake.input
     output_files = snakemake.output
 
-    africa_shape = gpd.read_file(snakemake.input.africa_shape)["geometry"].iloc[0]
+    df_region = gpd.read_file(snakemake.input.africa_shape)
 
     # only when country names are defined by shapes, load the info
     if names_by_shapes:
@@ -1038,7 +1075,7 @@ if __name__ == "__main__":
     clean_data(
         input_files,
         output_files,
-        africa_shape,
+        df_region,
         geo_crs,
         distance_crs,
         ext_country_shapes=ext_country_shapes,

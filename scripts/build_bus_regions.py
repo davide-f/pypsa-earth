@@ -149,13 +149,17 @@ def get_gadm_shape(
 
     return gadm_sel.geometry.values, gadm_sel.index.values
 
+
 def drop_antimeridian_shapes(gdf):
-    """Drop shapes that cross the antimeridian"""
+    """
+    Drop shapes that cross the antimeridian.
+    """
     idx_cross = gdf.geometry.bounds.query("(maxx - minx) > 180").index
     if not idx_cross.empty:
         logger.warning(f"Dropping {len(idx_cross)} shapes that cross the antimeridian")
         gdf.drop(idx_cross, inplace=True)
     return gdf
+
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
@@ -263,7 +267,8 @@ if __name__ == "__main__":
 
     # create geodataframe and remove nan shapes
     onshore_regions = pd.concat(onshore_regions, ignore_index=True).dropna(
-        axis="index", subset=["geometry"])
+        axis="index", subset=["geometry"]
+    )
 
     # drop antimeridian shapes
     drop_antimeridian_shapes(onshore_regions)
@@ -273,7 +278,8 @@ if __name__ == "__main__":
     if offshore_regions:
         # if a offshore_regions exists execute below
         offshore_regions = pd.concat(offshore_regions, ignore_index=True).dropna(
-        axis="index", subset=["geometry"])
+            axis="index", subset=["geometry"]
+        )
         # drop_antimeridian_shapes(offshore_regions)
         offshore_regions.to_file(snakemake.output.regions_offshore)
     else:

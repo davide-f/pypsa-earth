@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-name: pypsa-earth
+name: pypsa-earth-4_2_25
 channels:
 - conda-forge
 - bioconda
@@ -12,7 +12,7 @@ dependencies:
 - pip
 - mamba   # esp for windows build
 
-- pypsa>=0.25
+- pypsa>=0.33
 # - atlite>=0.2.4  # until https://github.com/PyPSA/atlite/issues/244 is not merged
 - dask
 # currently the packages are being installed with pip

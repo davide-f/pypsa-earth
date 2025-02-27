@@ -4,9 +4,9 @@
 // For format details, see https://aka.ms/devcontainer.json.
 {
   "name": "pypsa earth dev",
-  "image": "ghcr.io/pypsa-meets-earth/pypsa-earth:latest",
+  "image": "ghcr.io/davide-f/pypsa-earth:latest",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces,type=bind,consistency=cached",
-  "initializeCommand": "docker pull ghcr.io/pypsa-meets-earth/pypsa-earth:latest",
+  "initializeCommand": "docker pull ghcr.io/davide-f/pypsa-earth:latest",
   "workspaceFolder": "/workspaces",
   "postAttachCommand": "bash .devcontainer/setup.sh"
 }

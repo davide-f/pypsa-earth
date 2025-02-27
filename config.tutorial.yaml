@@ -5,6 +5,9 @@
 version: 0.6.0
 tutorial: true
 
+run:
+  name: "turorial" # use this to keep track of runs with different settings
+
 
 countries: ["NG", "BJ"]
 

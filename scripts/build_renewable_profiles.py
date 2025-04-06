@@ -250,6 +250,7 @@ def get_eia_annual_hydro_generation(fn, countries):
 
     df.index = cc.convert(df.index, to="iso2")
     df.index.name = "countries"
+    df = df.drop("not found").reindex(countries, fill_value=0.)
 
     df = df.T[countries] * 1e6  # in MWh/a
     df.index = df.index.astype(int)

@@ -178,7 +178,7 @@ def weighting_for_country(n, x):
 
     if w.max() == 0.0:
         logger.warning(
-            f"Null weighting for buses of country {x.country.iloc[0]}: returned default uniform weighting"
+            f"Null weighting for buses with index {x.index}: returned default uniform weighting"
         )
         return pd.Series(1.0, index=w.index)
     else:
@@ -622,7 +622,7 @@ if __name__ == "__main__":
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake(
-            "cluster_network", network="elec", simpl="", clusters="4"
+            "cluster_network", network="elec", simpl="", clusters="700"
         )
     configure_logging(snakemake)
 

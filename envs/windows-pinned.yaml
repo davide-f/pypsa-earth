@@ -35,6 +35,10 @@ dependencies:
   - aws-checksums=0.2.7
   - aws-crt-cpp=0.32.5
   - aws-sdk-cpp=1.11.510
+  - azure-core-cpp=1.14.0
+  - azure-identity-cpp=1.10.0
+  - azure-storage-blobs-cpp=12.13.0
+  - azure-storage-common-cpp=12.8.0
   - babel=2.17.0
   - beautifulsoup4=4.13.4
   - bleach=6.2.0
@@ -54,11 +58,13 @@ dependencies:
   - cached-property=1.5.2
   - cached_property=1.5.2
   - cairo=1.18.4
+  - capnproto=1.0.2
   - cartopy=0.24.0
   - cdsapi=0.7.6
   - certifi=2025.4.26
   - cffi=1.17.1
   - cfgv=3.3.1
+  - cfitsio=4.5.0
   - cftime=1.6.4
   - chaospy=4.3.19
   - charset-normalizer=3.4.2
@@ -118,6 +124,7 @@ dependencies:
   - fribidi=1.0.10
   - fsspec=2025.5.0
   - future=1.0.0
+  - gdal=3.9.3
   - geographiclib=2.0
   - geopandas=1.0.1
   - geopandas-base=1.0.1
@@ -139,7 +146,7 @@ dependencies:
   - h2=4.2.0
   - harfbuzz=11.2.1
   - hdf4=4.2.15
-  - hdf5=1.14.6
+  - hdf5=1.14.3
   - highspy=1.10.0
   - holoviews=1.20.2
   - hpack=4.1.0
@@ -149,7 +156,7 @@ dependencies:
   - hvplot=0.11.3
   - hyperframe=6.1.0
   - icu=75.1
-  - identify=2.6.10
+  - identify=2.6.11
   - idna=3.10
   - importlib-metadata=8.7.0
   - importlib_metadata=8.7.0
@@ -178,6 +185,7 @@ dependencies:
   - jupyterlab=4.4.2
   - jupyterlab_pygments=0.3.0
   - jupyterlab_server=2.27.3
+  - kealib=1.6.1
   - kiwisolver=1.4.7
   - krb5=1.21.3
   - lcms2=2.17
@@ -198,7 +206,7 @@ dependencies:
   - libclang13=20.1.5
   - libcrc32c=1.1.2
   - libcurl=8.13.0
-  - libdeflate=1.24
+  - libdeflate=1.23
   - libevent=2.1.12
   - libexpat=2.7.0
   - libffi=3.4.6
@@ -206,8 +214,21 @@ dependencies:
   - libfreetype6=2.13.3
   - libgcc=15.1.0
   - libgd=2.3.3
-  - libgdal-core=3.10.3
-  - libglib=2.84.2
+  - libgdal=3.9.3
+  - libgdal-core=3.9.3
+  - libgdal-fits=3.9.3
+  - libgdal-grib=3.9.3
+  - libgdal-hdf4=3.9.3
+  - libgdal-hdf5=3.9.3
+  - libgdal-jp2openjpeg=3.9.3
+  - libgdal-kea=3.9.3
+  - libgdal-netcdf=3.9.3
+  - libgdal-pdf=3.9.3
+  - libgdal-pg=3.9.3
+  - libgdal-postgisraster=3.9.3
+  - libgdal-tiledb=3.9.3
+  - libgdal-xls=3.9.3
+  - libglib=2.84.1
   - libgomp=15.1.0
   - libgoogle-cloud=2.36.0
   - libgoogle-cloud-storage=2.36.0
@@ -224,6 +245,7 @@ dependencies:
   - libopenblas=0.3.29
   - libparquet=20.0.0
   - libpng=1.6.47
+  - libpq=17.5
   - libprotobuf=5.29.3
   - libre2-11=2024.07.02
   - librttopo=1.1.0
@@ -301,7 +323,7 @@ dependencies:
   - parso=0.8.4
   - partd=1.4.2
   - patsy=1.0.1
-  - pcre2=10.45
+  - pcre2=10.44
   - pickleshare=0.7.5
   - pillow=11.2.1
   - pip=25.1.1
@@ -313,10 +335,13 @@ dependencies:
   - ply=3.11
   - polars=1.30.0
   - polars-default=1.30.0
+  - poppler=24.12.0
+  - poppler-data=0.4.12
+  - postgresql=17.5
   - powerplantmatching=0.7.1
   - pre-commit=4.2.0
   - progressbar2=4.5.0
-  - proj=9.6.0
+  - proj=9.5.1
   - prometheus_client=0.22.0
   - prompt-toolkit=3.0.51
   - protobuf=5.29.3
@@ -335,7 +360,7 @@ dependencies:
   - pyct=0.5.0
   - pydoe2=1.3.0
   - pygments=2.19.1
-  - pyogrio=0.11.0
+  - pyogrio=0.10.0
   - pyomo=6.9.2
   - pyparsing=3.2.3
   - pyppmd=1.1.0
@@ -365,7 +390,7 @@ dependencies:
   - pyzstd=0.17.0
   - qhull=2020.2
   - qt6-main=6.9.0
-  - rasterio=1.4.3
+  - rasterio=1.3.11
   - re2=2024.07.02
   - referencing=0.36.2
   - reproc=14.2.5.post0
@@ -398,6 +423,7 @@ dependencies:
   - snuggs=1.4.7
   - sortedcontainers=2.4.0
   - soupsieve=2.7
+  - spdlog=1.15.3
   - sqlite=3.49.2
   - stack_data=0.6.3
   - statsmodels=0.14.4
@@ -409,6 +435,7 @@ dependencies:
   - texttable=1.7.0
   - threadpoolctl=3.6.0
   - throttler=1.2.2
+  - tiledb=2.27.2
   - tinycss2=1.4.0
   - tk=8.6.13
   - tomli=2.2.1
@@ -470,3 +497,4 @@ dependencies:
   - pip:
       - googledrivedownloader==1.1.0
 prefix: C:\Miniconda\envs\pypsa-earth
+

@@ -448,34 +448,62 @@ def connect_stations_same_station_id(lines, buses):
     return lines
 
 
-def set_lv_substations(buses):
+def set_lv_substations(buses, low_voltage_buses):
     """
     Function to set what nodes are lv, thereby setting substation_lv The
     current methodology is to set lv nodes to buses where multiple voltage
     level are found, hence when the station_id is duplicated.
     """
-    # initialize column substation_lv to true
-    buses["substation_lv"] = True
+    # allow only AC buses to have lv substation
+    buses_ac = buses[~buses["dc"]]
 
-    # For each station number with multiple buses make lowest voltage `substation_lv = TRUE`
-    bus_with_stations_duplicates = buses[
-        buses.station_id.duplicated(keep=False)
-    ].sort_values(by=["station_id", "voltage"])
-    lv_bus_at_station_duplicates = (
-        buses[buses.station_id.duplicated(keep=False)]
-        .sort_values(by=["station_id", "voltage"])
-        .drop_duplicates(subset=["station_id"])
-    )
-    # Set all buses with station duplicates "False"
-    buses.loc[bus_with_stations_duplicates.index, "substation_lv"] = False
+    v_min = None
+    lv_buses = buses_ac
+    if low_voltage_buses.startswith("all"):
+        v_min = buses_ac.voltage.max() * 1.1
+    elif low_voltage_buses.startswith("min"):
+        tol = float(low_voltage_buses.split("-")[1])
+        v_min = buses_ac.voltage.min() * (1 + tol)
+    elif low_voltage_buses.startswith("v"):
+        v_min = float(low_voltage_buses.split("-")[1])
+    elif low_voltage_buses.startswith("duplicated"):
+        lv_buses = (
+            buses_ac[buses_ac.station_id.duplicated(keep=False)]
+            .sort_values(by=["station_id", "voltage"])
+            .drop_duplicates(subset=["station_id"])
+        )
+    else:
+        logger.error(f"Option low_voltage_buses {low_voltage_buses} not supported")
+
+    if v_min is not None:  # if v_min is set (not duplicated)
+        lv_buses = buses_ac[buses_ac.voltage <= v_min]
+        lv_buses = (
+            lv_buses[lv_buses.station_id.duplicated(keep=False)]
+            .sort_values(by=["station_id", "voltage"])
+            .drop_duplicates(subset=["station_id"])
+        )
+
+    if low_voltage_buses.startswith("duplicated"):
+        logger.info(
+            "Voltage for low voltage substations set with duplicated method: selected %d out of %d buses"
+            % (len(lv_buses), len(buses_ac))
+        )
+    else:
+        logger.info(
+            "Voltage for low voltage substations set with %s method (threshold %.0f V minimum voltage): selected %d of %d buses"
+            % (low_voltage_buses, v_min, len(lv_buses), len(buses_ac))
+        )
+
+    # initialize column substation_lv to true
+    buses["substation_lv"] = False
     # Set lv_buses with station duplicates "True"
-    buses.loc[lv_bus_at_station_duplicates.index, "substation_lv"] = True
+    buses.loc[lv_buses.index, "substation_lv"] = True
 
     return buses
 
 
 def merge_stations_lines_by_station_id_and_voltage(
-    lines, buses, geo_crs, distance_crs, tol=2000
+    lines, buses, geo_crs, distance_crs, low_voltage_buses, tol=2000
 ):
     """
     Function to merge close stations and adapt the line datasets to adhere to
@@ -506,7 +534,7 @@ def merge_stations_lines_by_station_id_and_voltage(
     lines = line_endings_to_bus_conversion(lines)
 
     # set substation_lv
-    set_lv_substations(buses)
+    set_lv_substations(buses, low_voltage_buses)
 
     logger.info("Stage 4d/5: Add converters to lines")
 
@@ -774,11 +802,12 @@ def built_network(
     # METHOD to merge buses with same voltage and within tolerance Step 4/5
     if build_osm_network_config.get("group_close_buses", False):
         tol = build_osm_network_config.get("group_tolerance_buses", 500)
+        low_voltage_buses = build_osm_network_config["low_voltage_buses"]
         logger.info(
             f"Stage 4/5: Aggregate close substations: enabled with tolerance {tol} m"
         )
         lines, buses = merge_stations_lines_by_station_id_and_voltage(
-            lines, buses, geo_crs, distance_crs, tol=tol
+            lines, buses, geo_crs, distance_crs, low_voltage_buses, tol=tol
         )
     else:
         logger.info("Stage 4/5: Aggregate close substations: disabled")

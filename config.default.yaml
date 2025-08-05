@@ -140,6 +140,7 @@ build_osm_network: # Options of the build_osm_network script; osm = OpenStreetMa
   split_overpassing_lines: true # When True, lines overpassing buses are splitted and connected to the bueses
   overpassing_lines_tolerance: 1 # [m] (default 1) Tolerance to identify lines overpassing buses
   force_ac: false # When true, it forces all components (lines and substation) to be AC-only. To be used if DC assets create problem.
+  low_voltage_buses: v-150000  # Specify the methodology to identify low voltage buses. Options: "min-x" (selects buses having the minimum voltage buses, with tolerance x e.g. x=0.1 for 10%), "all" (all buses are low voltage), "v-Y" (specify Y in Volts as the maximum voltage for low voltage buses)
 
 base_network:
   min_voltage_substation_offshore: 51000 # [V] minimum voltage of the offshore substations

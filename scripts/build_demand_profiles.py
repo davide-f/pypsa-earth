@@ -233,7 +233,7 @@ def build_demand_profiles(
     gegis_load = gegis_load.to_dataframe().reset_index().set_index("time")
 
     # filter load for analysed countries
-    gegis_load = gegis_load.loc[gegis_load.region_code.isin(countries)]
+    gegis_load = gegis_load.loc[gegis_load.region_code.isin(countries + ["KE"])]
 
     if isinstance(scale, dict):
         logger.info(f"Using custom scaling factor for load data.")
@@ -243,7 +243,7 @@ def build_demand_profiles(
 
         for country, scale_country in scale.items():
             gegis_load.loc[
-                gegis_load.region_code == country, "Electricity demand"
+                gegis_load.region_code == "KE", "Electricity demand"
             ] *= scale_country
 
     elif isinstance(scale, (int, float)):
@@ -262,7 +262,7 @@ def build_demand_profiles(
         """
         Distributes load in country according to population and gdp.
         """
-        l = gegis_load.loc[gegis_load.region_code == cntry]["Electricity demand"]
+        l = gegis_load.loc[gegis_load.region_code == "KE"]["Electricity demand"]
         if len(group) == 1:
             return pd.DataFrame({group.index[0]: l})
         else:

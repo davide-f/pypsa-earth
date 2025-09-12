@@ -89,6 +89,8 @@ cluster_options:
     algorithm: kmeans
     feature: solar+onwind-time
     exclude_carriers: []
+    overrides_network: false  # Method to overrides network capacities: false disabled, "replace" uses only the custom file, "merge" replaces only the existing capacities with the custom file
+    path_network_capacities: data/custom/path_network_capacities.csv  # string path to a csv file with lines and links capacities to be updated after clustering
   alternative_clustering: false # "False" use Voronoi shapes, "True" use GADM shapes
   distribute_cluster: ["load"] # Distributes cluster nodes per country according to ['load'],['pop'] or ['gdp']
   out_logging: true # When "True", logging is printed to console

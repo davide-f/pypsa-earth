@@ -138,8 +138,9 @@ from _helpers import (
     nearest_shape,
     update_config_dictionary,
     update_p_nom_max,
+    read_csv_nafix,
 )
-from add_electricity import load_costs
+from add_electricity import load_costs, calculate_annuity
 from build_shapes import add_gdp_data, add_population_data
 from pypsa.clustering.spatial import (
     busmap_by_greedy_modularity,
@@ -604,12 +605,90 @@ def cluster_regions(busmaps, inputs, output):
         regions_c.to_file(getattr(output, which))
 
 
+def set_flows_to_data(n, fp_custom_flows, drop_others, config, fp_costs):
+    """
+    Set network layout to match the data in df.
+    drop_others: if True, drop lines not in df by index (name column)
+
+    df must have columns:
+    - name: name of the line and index of the dataframe
+    - bus0
+    - bus1
+    - carrier: (AC for AC lines, DC for DC lines)
+    - s_nom: (capacity in MW)
+    - length: (in km)
+    - investment_cost: cost per unit length
+    """
+    df = read_csv_nafix(fp_custom_flows, index_col="name", dtype={"name": str})
+    if df.empty:
+        return n
+    # drop lines contained in the dataframe
+    i_ac_drop = n.lines.index.copy()
+    i_dc_drop = n.links.query("carrier in ['B2B', 'DC']").index.copy()
+    if not drop_others:
+        i_ac_drop = i_ac_drop.intersection(df.query("carrier == 'AC'").index)
+        i_dc_drop = i_dc_drop.intersection(df.query("carrier == 'DC'").index)
+    n.mremove("Line", i_ac_drop)
+    n.mremove("Link", i_dc_drop)
+
+    costs = load_costs(fp_costs, config["costs"], config["electricity"])
+
+    annuity_ac = calculate_annuity(
+        costs.at["HVAC overhead", "lifetime"],
+        costs.at["HVAC overhead", "discount rate"],
+    )
+    base_voltage = config["electricity"]["base_voltage"]
+    linetype_ac = config["lines"]["ac_types"][base_voltage]
+
+    annuity_dc = calculate_annuity(
+        costs.at["HVDC overhead", "lifetime"],
+        costs.at["HVDC overhead", "discount rate"],
+    )
+
+    df_ac = df.query("carrier == 'AC'")
+    df_dc = df.query("carrier == 'DC'")
+
+    num_parallel = (
+        df_ac["s_nom"]/np.sqrt(3)/n.line_types.loc[linetype_ac, "i_nom"]/base_voltage
+    )
+
+    n.madd(
+        "Line",
+        df_ac.index,
+        bus0=df_ac["bus0"],
+        bus1=df_ac["bus1"],
+        length=df_ac["length"],
+        s_nom=df_ac["s_nom"],
+        s_max_pu=config["lines"]["s_max_pu"],
+        capital_cost=df_ac["investment_cost"] * annuity_ac,
+        carrier="AC",
+        type=linetype_ac,
+        num_parallel=num_parallel,
+    )
+
+    dc_inv_cost = costs.at["HVDC inverter pair", "capital_cost"]
+
+    n.madd(
+        "Link",
+        df_dc.index,
+        bus0=df_dc["bus0"],
+        bus1=df_dc["bus1"],
+        p_nom=df_dc["s_nom"],
+        capital_cost=df_dc["investment_cost"]* annuity_dc + dc_inv_cost,
+        carrier="DC",
+        efficiency=1,
+        type="DC",
+        p_min_pu=-1,
+        p_max_pu=1,
+    )
+    return n
+
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
         snakemake = mock_snakemake(
-            "cluster_network", network="elec", simpl="", clusters="20flex"
+            "cluster_network", network="elec", simpl="", clusters="1"
         )
     configure_logging(snakemake)
 
@@ -626,6 +705,8 @@ if __name__ == "__main__":
     )
     country_list = snakemake.params.countries
     geo_crs = snakemake.params.crs["geo_crs"]
+    cluster_options = snakemake.params.cluster_options
+    overrides_network = cluster_options["cluster_network"]["overrides_network"]
 
     renewable_carriers = pd.Index(
         [
@@ -635,9 +716,7 @@ if __name__ == "__main__":
         ]
     )
 
-    exclude_carriers = snakemake.params.cluster_options["cluster_network"].get(
-        "exclude_carriers", []
-    )
+    exclude_carriers = cluster_options["cluster_network"].get("exclude_carriers", [])
     aggregate_carriers = set(n.generators.carrier) - set(exclude_carriers)
 
     # Option for subregion
@@ -726,9 +805,7 @@ if __name__ == "__main__":
             )
             busmap.index = busmap.index.astype(str)
             logger.info(f"Imported custom busmap from {snakemake.input.custom_busmap}")
-        cluster_config = snakemake.config.get("cluster_options", {}).get(
-            "cluster_network", {}
-        )
+        cluster_config = cluster_options["cluster_network"]
         clustering = clustering_for_n_clusters(
             inputs,
             config,
@@ -763,6 +840,17 @@ if __name__ == "__main__":
     clustering.network.meta = dict(
         snakemake.config, **dict(wildcards=dict(snakemake.wildcards))
     )
+
+    if overrides_network:
+        drop_others = overrides_network.lower()=="replace"
+        clustering.network = set_flows_to_data(
+            clustering.network,
+            cluster_options["cluster_network"]["path_network_capacities"],
+            drop_others=drop_others,
+            config=snakemake.config,
+            fp_costs=snakemake.input.tech_costs,
+        )
+    
     clustering.network.export_to_netcdf(outputs.network)
     for attr in (
         "busmap",

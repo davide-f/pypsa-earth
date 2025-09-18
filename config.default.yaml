@@ -92,6 +92,7 @@ cluster_options:
   alternative_clustering: false # "False" use Voronoi shapes, "True" use GADM shapes
   distribute_cluster: ["load"] # Distributes cluster nodes per country according to ['load'],['pop'] or ['gdp']
   out_logging: true # When "True", logging is printed to console
+  custom_network_capacities: false # If false, no custom capacities are used. If true, custom capacities are read from the file data/custom/network_capacities.csv
   aggregation_strategies:
     generators: # use "min" for more conservative assumptions
       p_nom: sum

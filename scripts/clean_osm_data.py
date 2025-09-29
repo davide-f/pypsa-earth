@@ -730,7 +730,7 @@ def filter_lines_by_geometry(df_all_lines):
     df_all_lines.dropna(subset=["geometry"], axis=0, inplace=True)
 
     # remove lines represented as Polygons
-    df_all_lines = df_all_lines[df_all_lines.geometry.geom_type == "LineString"]
+    df_all_lines = df_all_lines[df_all_lines.geometry.geom_type.str.contains("LineString")]
 
     return df_all_lines
 

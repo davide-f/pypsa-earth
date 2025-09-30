@@ -316,9 +316,19 @@ def enforce_autarky(n, only_crossborder=False):
     n.mremove("Link", links_rm)
 
 
-def set_line_nom_max(n, s_nom_max_set=np.inf, p_nom_max_set=np.inf, s_nom_max_min_set=-np.inf, p_nom_max_min_set=-np.inf):
-    n.lines.s_nom_max = n.lines.s_nom_max.clip(lower=s_nom_max_min_set, upper=s_nom_max_set)
-    n.links.p_nom_max = n.links.p_nom_max.clip(lower=p_nom_max_min_set, upper=p_nom_max_set)
+def set_line_nom_max(
+    n,
+    s_nom_max_set=np.inf,
+    p_nom_max_set=np.inf,
+    s_nom_max_min_set=-np.inf,
+    p_nom_max_min_set=-np.inf,
+):
+    n.lines.s_nom_max = n.lines.s_nom_max.clip(
+        lower=s_nom_max_min_set, upper=s_nom_max_set
+    )
+    n.links.p_nom_max = n.links.p_nom_max.clip(
+        lower=p_nom_max_min_set, upper=p_nom_max_set
+    )
 
 
 if __name__ == "__main__":

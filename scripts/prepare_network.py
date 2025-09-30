@@ -316,9 +316,9 @@ def enforce_autarky(n, only_crossborder=False):
     n.mremove("Link", links_rm)
 
 
-def set_line_nom_max(n, s_nom_max_set=np.inf, p_nom_max_set=np.inf):
-    n.lines.s_nom_max = n.lines.s_nom_max.clip(upper=s_nom_max_set)
-    n.links.p_nom_max = n.links.p_nom_max.clip(upper=p_nom_max_set)
+def set_line_nom_max(n, s_nom_max_set=np.inf, p_nom_max_set=np.inf, s_nom_max_min_set=-np.inf, p_nom_max_min_set=-np.inf):
+    n.lines.s_nom_max = n.lines.s_nom_max.clip(lower=s_nom_max_min_set, upper=s_nom_max_set)
+    n.links.p_nom_max = n.links.p_nom_max.clip(lower=p_nom_max_min_set, upper=p_nom_max_set)
 
 
 if __name__ == "__main__":
@@ -328,10 +328,10 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "prepare_network",
             simpl="",
-            clusters="4",
-            ll="c1",
-            opts="Co2L-4H",
-            configfile="test/config.sector.yaml",
+            clusters="2",
+            ll="copt",
+            opts="1H",
+            # configfile="test/config.sector.yaml",
         )
 
     configure_logging(snakemake)
@@ -435,8 +435,10 @@ if __name__ == "__main__":
 
     set_line_nom_max(
         n,
-        s_nom_max_set=snakemake.params.lines.get("s_nom_max,", np.inf),
-        p_nom_max_set=snakemake.params.links.get("p_nom_max,", np.inf),
+        s_nom_max_set=snakemake.params.lines.get("s_nom_max", np.inf),
+        p_nom_max_set=snakemake.params.links.get("p_nom_max", np.inf),
+        s_nom_max_min_set=snakemake.params.lines.get("s_nom_max_min", -np.inf),
+        p_nom_max_min_set=snakemake.params.links.get("p_nom_max_min", -np.inf),
     )
 
     if "ATK" in opts:

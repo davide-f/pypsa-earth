@@ -229,7 +229,9 @@ def set_transmission_limit(n, ll_type, factor, costs, lines, links):
         )
     elif ll_type == "l":
         n.lines["s_nom_max"] = n.lines["s_nom"] * float(factor)
-        n.links["p_nom_max"] = n.links["p_nom"] * float(factor)
+        n.links.loc[links_dc_b, "p_nom_max"] = n.links.loc[links_dc_b, "p_nom"] * float(
+            factor
+        )
 
     set_line_nom_max(n, lines, links)
 

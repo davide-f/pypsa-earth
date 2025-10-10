@@ -38,7 +38,6 @@ LINES_COLUMNS = [
     "length",
     "dc",
     "geometry",
-    "bounds",
 ]
 
 
@@ -497,11 +496,15 @@ def merge_stations_lines_by_station_id_and_voltage(
 
     logger.info("Stage 4c/5: Specify the bus ids of the line endings")
 
+    # update line endings
+    lines = line_endings_to_bus_conversion(lines)
+
     # set the bus ids to the line dataset
     lines, buses = set_lines_ids(lines, buses, distance_crs)
 
     # drop lines starting and ending in the same node
     lines.drop(lines[lines["bus0"] == lines["bus1"]].index, inplace=True)
+    
     # update line endings
     lines = line_endings_to_bus_conversion(lines)
 

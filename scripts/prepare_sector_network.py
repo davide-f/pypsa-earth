@@ -2073,8 +2073,7 @@ def add_land_transport(
         co2 = (
             ice_share
             / ice_efficiency
-            * transport[spatial.nodes].sum().sum()
-            / 8760
+            * transport[spatial.nodes].mean().sum()
             * costs.at["oil", "CO2 intensity"]
         )
 

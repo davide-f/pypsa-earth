@@ -11,7 +11,7 @@ dependencies:
 - python>=3.10, <3.12  # 3.12 has weird issues with snakemake https://github.com/snakemake/snakemake/issues/2480
 - pip
 
-- pypsa>=0.33, <0.34
+- pypsa>=0.34, <0.35
 - atlite>=0.4.1
 - dask
 - powerplantmatching>=0.8
@@ -28,7 +28,7 @@ dependencies:
 - pyscipopt
 - lxml
 - numpy<2
-- pandas
+- pandas<3
 - geopandas>=1
 - fiona>=1.10
 - xarray>=2023.11.0, <=2025.01.2

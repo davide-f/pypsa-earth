@@ -26,6 +26,16 @@ from retrieve_databundle_light import (
 )
 from pathlib import Path
 
+# customize storage plugin
+storage:
+    provider="http",
+    keep_local=False,
+    retries=3,
+
+
+storage cached_http:
+    provider="cached-http",
+
 
 copy_default_files()
 

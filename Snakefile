@@ -442,7 +442,7 @@ if config["enable"].get("retrieve_cost_data", True):
             version=config["costs"]["technology_data_version"],
         input:
             storage(
-                f"raw.githubusercontent.com/PyPSA/technology-data/{config['costs']['technology_data_version']}/outputs/{cost_directory}/"
+                f"raw.githubusercontent.com/PyPSA/technology-data/{config['costs']['technology_data_version']}/outputs/{cost_directory}"
                 + "costs_{planning_horizons}.csv",
                 keep_local=True,
             ),

@@ -777,6 +777,8 @@ def get_best_bundles(
                     + ", ".join(selection_bundles)
                 )
 
+    bundles_to_download.sort()
+
     return bundles_to_download
 
 

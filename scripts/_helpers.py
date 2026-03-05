@@ -1738,25 +1738,6 @@ def nearest_shape(n, path_shapes, crs, tolerance=100):
     return n
 
 
-def branch(condition, then, otherwise=None):
-    """
-    This is a placeholder function that exists in Snakemake versions > 8.3.0.
-    It can be removed once Snakemake is updated to a compatible version.
-    """
-    if condition:
-        return then
-
-    if otherwise is None:
-        if isinstance(then, dict):
-            return {}
-        elif isinstance(then, str):
-            return []
-        else:
-            return None
-
-    return otherwise
-
-
 def rename_techs(label):
     prefix_to_remove = [
         "residential ",

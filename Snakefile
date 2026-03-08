@@ -150,7 +150,6 @@ if config["enable"].get("retrieve_databundle", True):
 
     rule retrieve_databundle_light:
         params:
-            id_bundles=", ".join(bundles_to_download),
             bundles_to_download=bundles_to_download,
             hydrobasins_level=config["renewable"]["hydro"]["hydrobasins_level"],
         output:  #expand(directory('{file}') if isdir('{file}') else '{file}', file=datafiles)

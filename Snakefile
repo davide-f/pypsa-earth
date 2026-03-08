@@ -17,6 +17,7 @@ from _helpers import (
     check_config_version,
     copy_default_files,
     BASE_DIR,
+    branch,  # Snakemake >= 8.3.0 provides branch but not compatible with *,**
 )
 from build_demand_profiles import get_load_paths_gegis
 from retrieve_databundle_light import (

@@ -690,9 +690,7 @@ def get_best_bundles_by_category(
 
                 returned_bundles.append(bname)
 
-    returned_bundles.sort()
-
-    return returned_bundles
+    return sorted(returned_bundles)
 
 
 def get_best_bundles(
@@ -777,9 +775,7 @@ def get_best_bundles(
                     + ", ".join(selection_bundles)
                 )
 
-    bundles_to_download.sort()
-
-    return bundles_to_download
+    return sorted(bundles_to_download)
 
 
 def get_best_bundles_in_snakemake(config, include_categories=[], exclude_categories=[]):

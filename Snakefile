@@ -447,7 +447,7 @@ if config["enable"].get("retrieve_cost_data", True):
         params:
             version=config["costs"]["technology_data_version"],
         input:
-            storage(
+            storage.http(
                 f"https://raw.githubusercontent.com/PyPSA/technology-data/{config['costs']['technology_data_version']}/outputs/{cost_directory}"
                 + "costs_{planning_horizons}.csv",
                 keep_local=True,

@@ -18,6 +18,7 @@ from _helpers import (
     save_to_geojson,
     to_csv_nafix,
 )
+from shapely.ops import linemerge
 
 logger = create_logger(__name__)
 
@@ -342,6 +343,8 @@ def clean_frequency(df, default_frequency="50"):
         "16.67": "16.7",
         "50;50;16.716.7": "50;50;16.7;16.7",
         "50;16.7?": "50;16.7",
+        "50.0": "50",
+        "60.0": "60",
         # "24 kHz": "24000",
     }
 
@@ -406,12 +409,23 @@ def clean_circuits(df):
         "1.": "1",
     }
 
-    # note: no string conversion here! it is performed later on
+    # note: no string conversion for all entries in clean_circuits! it is performed later on
     df["circuits"] = (
         df["circuits"]
         .replace(repl_circuits)
         .map(lambda x: x.replace(" ", "") if isinstance(x, str) else x)
     )
+
+    # Convert numbers in different dtypes to string while preserving NaN or other strings.
+    is_numeric = ~pd.to_numeric(df["circuits"], errors="coerce").isna()
+    df["circuits"] = df["circuits"].mask(is_numeric, df["circuits"].astype(str))
+
+    # Report non-numeric and non-NaN values, which should be added to repl_circuits.
+    if df.loc[~is_numeric, "circuits"].notna().any():
+        logger.warning(
+            "Non-numeric and non-NaN values found in circuits column, consider replacement: "
+            + str(df.loc[~is_numeric, "circuits"].unique())
+        )
 
     return df
 
@@ -443,9 +457,22 @@ def clean_cables(df):
         "line": "1",
     }
 
-    df["cables"] = df["cables"].map(
-        lambda x: x.replace(" ", "") if isinstance(x, str) else x
+    df["cables"] = (
+        df["cables"]
+        .replace(repl_cables)
+        .map(lambda x: x.replace(" ", "") if isinstance(x, str) else x)
     )
+
+    # Convert numbers in different dtypes to string while preserving NaN or other strings.
+    is_numeric = ~pd.to_numeric(df["cables"], errors="coerce").isna()
+    df["cables"] = df["cables"].mask(is_numeric, df["cables"].astype(str))
+
+    # Report non-numeric and non-NaN values, which should be added to repl_cables.
+    if df.loc[~is_numeric, "cables"].notna().any():
+        logger.warning(
+            "Non-numeric and non-NaN values found in cables column, consider replacement: "
+            + str(df.loc[~is_numeric, "cables"].unique())
+        )
 
     return df
 
@@ -557,14 +584,9 @@ def fill_circuits(df):
             return ret_def
 
     # cables requirement for circuits calculation
-    cables_req = {
-        "50": 3,
-        "60": 3,
-        "16.7": 2,
-        "0": 2,
-    }
+    cables_req = {"50": 3, "60": 3, "16.7": 2, "0": 2}
 
-    def _basic_cables(f_val, cables_req=cables_req, def_circ=2):
+    def _basic_cables(f_val, cables_req=cables_req, def_circ=3):
         return cables_req[f_val] if f_val in cables_req.keys() else def_circ
 
     len_f, len_c, isna_c, len_cab, isna_cab = _get_circuits_status(df)
@@ -729,8 +751,17 @@ def filter_lines_by_geometry(df_all_lines):
     # drop None geometries
     df_all_lines.dropna(subset=["geometry"], axis=0, inplace=True)
 
-    # remove lines represented as Polygons
-    df_all_lines = df_all_lines[df_all_lines.geometry.geom_type == "LineString"]
+    idx_mls = df_all_lines.geometry.geom_type == "MultiLineString"
+    for idx, row in df_all_lines[idx_mls].iterrows():
+        df_all_lines.loc[idx, "geometry"] = linemerge(row.geometry)
+
+    df_drop = df_all_lines[df_all_lines.geometry.geom_type != "LineString"]
+    if not df_drop.empty:
+        # remove lines represented as Polygons or multilinestrings
+        logger.warning(
+            f"Dropping {len(df_drop)} lines with unexpected geometry types:\n{df_drop} "
+        )
+        df_all_lines.drop(df_drop.index, axis=0, inplace=True)
 
     return df_all_lines
 
@@ -870,6 +901,10 @@ def load_network_data(network_asset, data_options):
         loaded_df1 = gpd.read_file(input_files[network_asset])
         loaded_df2 = gpd.read_file(custom_path)
         loaded_df = pd.concat([loaded_df1, loaded_df2], ignore_index=True)
+
+    elif cleaning_data_options == "none":
+        loaded_df1 = gpd.read_file(input_files[network_asset])
+        loaded_df = gpd.GeoDataFrame(columns=loaded_df1.columns, crs=loaded_df1.crs)
 
     else:
         if cleaning_data_options != "OSM_only":

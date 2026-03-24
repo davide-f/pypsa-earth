@@ -17,6 +17,7 @@ import pandas as pd
 import powerplantmatching as pm
 import pypsa
 import xarray as xr
+from _helpers import sanitize_carriers, sanitize_locations
 
 # from _helpers import (
 #     configure_logging,
@@ -147,13 +148,19 @@ def add_power_capacities_installed_before_baseyear(n, grouping_years, costs, bas
         "Oil": "oil",
         "OCGT": "OCGT",
         "CCGT": "CCGT",
-        "Bioenergy": "urban central solid biomass CHP",
+        "Bioenergy PP": "biomass",
+        "Bioenergy CHP": "urban central solid biomass CHP",
     }
 
     # Replace Fueltype "Natural Gas" with the respective technology (OCGT or CCGT)
     df_agg.loc[df_agg["Fueltype"] == "Natural Gas", "Fueltype"] = df_agg.loc[
         df_agg["Fueltype"] == "Natural Gas", "Technology"
     ]
+
+    # Differentiate between biomass powerplant and CHP
+    df_agg.loc[df_agg["Fueltype"] == "Bioenergy", "Fueltype"] = (
+        df_agg["Fueltype"] + " " + df_agg["Set"]
+    )
 
     fueltype_to_drop = [
         "Hydro",
@@ -237,6 +244,7 @@ def add_power_capacities_installed_before_baseyear(n, grouping_years, costs, bas
         "oil": "oil",
         "lignite": "lignite",
         "nuclear": "uranium",
+        "biomass": "biomass",
         "urban central solid biomass CHP": "biomass",
     }
 
@@ -329,12 +337,12 @@ def add_power_capacities_installed_before_baseyear(n, grouping_years, costs, bas
                     )
 
         else:
-            if generator not in vars(spatial).keys():
+            if carrier[generator] not in vars(spatial).keys():
                 logger.debug(f"Carrier type {generator} not in spatial data, skipping")
                 continue
 
             bus0 = vars(spatial)[carrier[generator]].nodes
-            if "EU" not in vars(spatial)[carrier[generator]].locations:
+            if "Earth" not in vars(spatial)[carrier[generator]].locations:
                 bus0 = bus0.intersection(capacity.index + " " + carrier[generator])
 
             # check for missing bus
@@ -612,9 +620,13 @@ if __name__ == "__main__":
     Nyears = n.snapshot_weightings.generators.sum() / 8760.0
     costs = prepare_costs(
         snakemake.input.costs,
-        snakemake.params.costs["USD2013_to_EUR2013"],
+        snakemake.config["costs"],
+        snakemake.params.costs["output_currency"],
         snakemake.params.costs["fill_values"],
         Nyears,
+        snakemake.params.costs["default_exchange_rate"],
+        snakemake.params.costs["future_exchange_rate_strategy"],
+        snakemake.params.costs["custom_future_exchange_rate"],
     )
 
     grouping_years_power = snakemake.params.existing_capacities["grouping_years_power"]
@@ -624,7 +636,7 @@ if __name__ == "__main__":
     )
 
     # TODO: not implemented in -sec yet
-    # if options["heating"]:
+    # if options["enable"]["heat"]:
     #     time_dep_hp_cop = options["time_dep_hp_cop"]
     #     ashp_cop = (
     #         xr.open_dataarray(snakemake.input.cop_air_total)
@@ -655,6 +667,7 @@ if __name__ == "__main__":
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
 
-    # sanitize_carriers(n, snakemake.config)
+    sanitize_carriers(n, snakemake.config)
+    sanitize_locations(n)
 
     n.export_to_netcdf(snakemake.output[0])

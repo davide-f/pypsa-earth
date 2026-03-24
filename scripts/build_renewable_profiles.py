@@ -215,6 +215,7 @@ logger = create_logger(__name__)
 
 COPERNICUS_CRS = "EPSG:4326"
 GEBCO_CRS = "EPSG:4326"
+PPL_CRS = "EPSG:4326"
 
 
 def check_cutout_match(cutout, geodf):
@@ -242,7 +243,7 @@ def get_eia_annual_hydro_generation(fn, countries):
     df = pd.read_csv(fn, skiprows=1, index_col=1, na_values=[" ", "--"]).iloc[1:, 1:]
     df.index = df.index.str.strip()
 
-    df.loc["Germany"] = df.filter(like="Germany", axis=0).sum()
+    df.loc["Germany"] = df.filter(like="Germany", axis=0).astype(float).sum()
     df.loc["Serbia"] += df.loc["Kosovo"]
     df = df.loc[~df.index.str.contains("Former")]
     df.drop(["World", "Germany, West", "Germany, East"], inplace=True)
@@ -250,8 +251,47 @@ def get_eia_annual_hydro_generation(fn, countries):
     df.index = cc.convert(df.index, to="iso2")
     df.index.name = "countries"
 
-    df = df.T[countries] * 1e6  # in MWh/a
+    df = df.T[countries].astype(float) * 1e6  # in MWh/a
     df.index = df.index.astype(int)
+
+    return df
+
+
+def get_irena_annual_hydro_generation(fn, countries):
+    """
+    Load annual renewable hydropower generation data from the IRENA Country sheet.
+    Convert ISO3 country codes to ISO2 and annual generation from GWh to MWh.
+
+    Original source:
+    https://www.irena.org/-/media/Files/IRENA/Agency/Publication/2025/Jul/IRENA_Statistics_Extract_2025H2.xlsx
+
+    Note
+    ----
+    IRENA energy statistics dataset is available for non-commercial use only.
+    Users are responsible for ensuring compliance with the dataset’s licensing terms.
+    """
+    df = pd.read_excel(fn, sheet_name="Country")
+
+    iso3_to_iso2 = {coco.convert(names=name, to="ISO3"): name for name in countries}
+
+    df = (
+        df.query(
+            "Technology == 'Renewable hydropower' "
+            "and `Producer Type` != 'All types' "
+            "and `ISO3 code` in @iso3_to_iso2"
+        )
+        .assign(countries=df["ISO3 code"].replace(iso3_to_iso2))
+        .groupby(["countries", "Year"])["Electricity Generation (GWh)"]
+        .sum()
+        .unstack("countries")
+        .fillna(0)
+        .mul(1e3)
+    )
+
+    missing_countries = set(countries) - set(df.columns)
+
+    for c in missing_countries:
+        df[c] = 0.0
 
     return df
 
@@ -355,9 +395,6 @@ def rescale_hydro(plants, runoff, normalize_using_yearly, normalization_year):
     if plants.empty or plants.installed_hydro.any() == False:
         logger.info("No bus has installed hydro plants, ignoring normalization.")
         return runoff
-
-    if snakemake.params.alternative_clustering:
-        plants = plants.set_index("shape_id")
 
     years_statistics = normalize_using_yearly.index
     if isinstance(years_statistics, pd.DatetimeIndex):
@@ -488,7 +525,7 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
-        snakemake = mock_snakemake("build_renewable_profiles", technology="solar")
+        snakemake = mock_snakemake("build_renewable_profiles", technology="hydro")
     configure_logging(snakemake)
 
     pgb.streams.wrap_stderr()
@@ -533,24 +570,6 @@ if __name__ == "__main__":
         # the region should be restricted for non-hydro technologies, as the hydro potential is calculated across hydrobasins which may span beyond the region of the country
         cutout = filter_cutout_region(cutout, regions)
 
-    if snakemake.params.alternative_clustering:
-        regions = gpd.GeoDataFrame(
-            regions.reset_index()
-            .groupby("shape_id")
-            .agg(
-                {
-                    "x": "mean",
-                    "y": "mean",
-                    "country": "first",
-                    "geometry": "first",
-                    "bus": "first",
-                }
-            )
-            .reset_index()
-            .set_index("bus"),
-            crs=regions.crs,
-        )
-
     buses = regions.index
 
     func = getattr(cutout, resource.pop("method"))
@@ -562,60 +581,35 @@ if __name__ == "__main__":
         hydrobasins_path = os.path.join(BASE_DIR, resource["hydrobasins"])
         resource["hydrobasins"] = hydrobasins_path
         hydrobasins = gpd.read_file(hydrobasins_path)
-        ppls = load_powerplants(snakemake.input.powerplants)
+        ppls = load_powerplants(paths.powerplants)
 
-        hydro_ppls = ppls[ppls.carrier == "hydro"]
+        all_hydro_ppls = ppls[ppls.carrier == "hydro"]
 
-        # commented out as rivers may span across multiple countries
-        # hydrobasins = hydrobasins[
-        #     [
-        #         any(country_shapes.geometry.intersects(geom))
-        #         for geom in hydrobasins.geometry
-        #     ]
-        # ]  # exclude hydrobasins shapes that do not intersect the countries of interest
+        # select hydro units within hydrobasins
+        hgdf = gpd.GeoDataFrame(
+            all_hydro_ppls,
+            index=all_hydro_ppls.index,
+            geometry=gpd.points_from_xy(all_hydro_ppls.lon, all_hydro_ppls.lat),
+            crs=PPL_CRS,
+        ).to_crs(hydrobasins.crs)
+        temp_gdf = gpd.sjoin(hgdf, hydrobasins, predicate="within", how="left")
 
-        # select busbar whose location (p) belongs to at least one hydrobasin geometry
-        # if extendable option is true, all buses are included
-        # otherwise only where hydro powerplants are available are considered
-        if snakemake.params.alternative_clustering:
-            filter_bus_to_consider = regions.index.map(
-                lambda bus_id: config.get("extendable", False)
-                | (bus_id in hydro_ppls.region_id.values)
-            )
-        ### TODO: quickfix. above case and the below case should by unified
-        if snakemake.params.alternative_clustering == False:
-            filter_bus_to_consider = regions.index.map(
-                lambda bus_id: config.get("extendable", False)
-                | (bus_id in hydro_ppls.bus.values)
-            )
-        bus_to_consider = regions.index[filter_bus_to_consider]
-
-        # identify subset of buses within the hydrobasins
-        filter_bus_in_hydrobasins = regions[filter_bus_to_consider].apply(
-            lambda row: any(hydrobasins.geometry.contains(Point(row["x"], row["y"]))),
-            axis=1,
+        hydro_ppls = pd.DataFrame(
+            hgdf.loc[temp_gdf.index_right.dropna().index].drop(columns="geometry")
         )
-        bus_in_hydrobasins = filter_bus_in_hydrobasins[filter_bus_in_hydrobasins].index
 
         bus_notin_hydrobasins = list(
-            set(bus_to_consider).difference(set(bus_in_hydrobasins))
+            set(all_hydro_ppls.index).difference(set(hydro_ppls.index))
         )
 
-        resource["plants"] = regions.rename(
-            columns={"x": "lon", "y": "lat", "country": "countries"}
-        ).loc[bus_in_hydrobasins, ["lon", "lat", "countries", "shape_id"]]
+        resource["plants"] = hydro_ppls.rename(columns={"country": "countries"})[
+            ["lon", "lat", "countries"]
+        ]
 
-        # TODO: these cases shall be fixed by restructuring the alternative clustering procedure
-        if snakemake.params.alternative_clustering == False:
-            resource["plants"]["installed_hydro"] = [
-                True if (bus_id in hydro_ppls.bus.values) else False
-                for bus_id in resource["plants"].index
-            ]
-        else:
-            resource["plants"]["installed_hydro"] = [
-                True if (bus_id in hydro_ppls.region_id.values) else False
-                for bus_id in resource["plants"].shape_id.values
-            ]
+        # TODO: possibly revise to account for non-existent hydro powerplants
+        resource["plants"]["installed_hydro"] = [
+            True for bus_id in resource["plants"].index
+        ]
 
         # get normalization before executing runoff
         normalization = None
@@ -631,8 +625,6 @@ if __name__ == "__main__":
         else:
             # otherwise perform the calculations
             inflow = correction_factor * func(capacity_factor=True, **resource)
-            if snakemake.params.alternative_clustering:
-                inflow["plant"] = regions.shape_id.loc[inflow["plant"]].values
 
             if "clip_min_inflow" in config:
                 inflow = inflow.where(inflow >= config["clip_min_inflow"], 0)
@@ -642,19 +634,24 @@ if __name__ == "__main__":
                 method = normalization["method"]
                 norm_year = normalization.get("year", int(inflow.time[0].dt.year))
                 if method == "hydro_capacities":
-                    path_hydro_capacities = snakemake.input.hydro_capacities
+                    path_hydro_capacities = paths.hydro_capacities
                     normalize_using_yearly = (
                         get_hydro_capacities_annual_hydro_generation(
                             path_hydro_capacities, countries, norm_year
                         )
-                        * config.get("multiplier", 1.0)
                     )
 
                 elif method == "eia":
-                    path_eia_stats = snakemake.input.eia_hydro_generation
+                    path_eia_stats = paths.eia_hydro_generation
                     normalize_using_yearly = get_eia_annual_hydro_generation(
                         path_eia_stats, countries
-                    ) * config.get("multiplier", 1.0)
+                    )
+
+                elif method == "irena":
+                    path_irena_stats = paths.irena_stats
+                    normalize_using_yearly = get_irena_annual_hydro_generation(
+                        path_irena_stats, countries
+                    )
 
                 inflow = rescale_hydro(
                     resource["plants"], inflow, normalize_using_yearly, norm_year
@@ -669,8 +666,8 @@ if __name__ == "__main__":
 
             # add zero values for out of hydrobasins elements
             if len(bus_notin_hydrobasins) > 0:
-                regions_notin = regions.loc[
-                    bus_notin_hydrobasins, ["x", "y", "country", "shape_id"]
+                regions_notin = all_hydro_ppls.loc[
+                    bus_notin_hydrobasins, ["lon", "lat", "country"]
                 ]
                 logger.warning(
                     f"Buses {bus_notin_hydrobasins} are not contained into hydrobasins."
@@ -684,11 +681,7 @@ if __name__ == "__main__":
                     ),
                     dims=("plant", "time"),
                     coords=dict(
-                        plant=(
-                            bus_notin_hydrobasins
-                            if not snakemake.params.alternative_clustering
-                            else regions_notin["shape_id"].values
-                        ),
+                        plant=bus_notin_hydrobasins,
                         time=inflow.coords["time"],
                     ),
                 )
@@ -816,7 +809,7 @@ if __name__ == "__main__":
 
         if snakemake.wildcards.technology.startswith("offwind"):
             logger.info("Calculate underwater fraction of connections.")
-            offshore_shape = gpd.read_file(paths["offshore_shapes"]).unary_union
+            offshore_shape = gpd.read_file(paths["offshore_shapes"]).union_all()
             underwater_fraction = []
             for bus in buses:
                 p = centre_of_mass.sel(bus=bus).data

@@ -154,6 +154,9 @@ def shapes_to_shapes(orig, dest):
     orig_prepped = list(map(prep, orig))
     transfer = sparse.lil_matrix((len(dest), len(orig)), dtype=float)
 
+    orig = list(orig)
+    dest = list(dest)
+
     for i, j in product(range(len(dest)), range(len(orig))):
         if orig_prepped[j].intersects(dest[i]):
             area = orig[j].intersection(dest[i]).area
@@ -234,8 +237,15 @@ def build_demand_profiles(
     gegis_load = xr.merge(gegis_load_list)
     gegis_load = gegis_load.to_dataframe().reset_index().set_index("time")
 
-    # filter load for analysed countries
-    gegis_load = gegis_load.loc[gegis_load.region_code.isin(countries)]
+    # # filter load for analysed countries
+    # gegis_load = gegis_load.loc[gegis_load.region_code.isin(countries)]
+
+    disagg_opt = load_options["disaggregation"]
+    if disagg_opt["method"] == "geospatial":
+        shapes = gpd.read_file(disagg_opt["geospatial"]["source"])
+    else:
+        shapes = gpd.read_file(admin_shapes).set_index("GADM_ID")
+    shapes["geometry"] = shapes["geometry"].apply(lambda x: make_valid(x))
 
     if isinstance(scale, dict):
         logger.info(f"Using custom scaling factor for load data.")
@@ -252,14 +262,6 @@ def build_demand_profiles(
         logger.info(f"Load data scaled with scaling factor {scale}.")
         gegis_load["Electricity demand"] *= scale
 
-    disagg_opt = load_options["disaggregation"]
-
-    if disagg_opt["method"] == "geospatial":
-        shapes = gpd.read_file(disagg_opt["geospatial"]["source"])
-    else:
-        shapes = gpd.read_file(admin_shapes).set_index("GADM_ID")
-    shapes["geometry"] = shapes["geometry"].apply(lambda x: make_valid(x))
-
     def upsample(cntry, group):
         """
         Distributes load in country according to population and gdp.
@@ -271,7 +273,7 @@ def build_demand_profiles(
             shapes_cntry = shapes.loc[shapes.country == cntry]
             transfer = shapes_to_shapes(group, shapes_cntry.geometry).T.tocsr()
 
-            if disagg_opt["method"] == "geospatial": 
+            if (disagg_opt["method"] == "geospatial") and (disagg_opt["geospatial"]["scaling"] != "subregional"): 
                 factors = pd.Series(
                     transfer.dot(shapes_cntry["demand"].fillna(0.0).values), index=group.index
                 )
@@ -296,10 +298,33 @@ def build_demand_profiles(
                 columns=factors.index,
             )
 
+    demand_grouper = regions.country
+    if (disagg_opt["method"] == "geospatial") and (disagg_opt["geospatial"]["scaling"] == "subregional"):
+        centroids = regions.copy()
+        centroids["geometry"] = regions.geometry.centroid
+        gadm_id_by_region = gpd.sjoin(centroids, shapes.set_index("GADM_ID"), predicate="within", how="left")
+        unique_region_codes = gegis_load["region_code"].unique()
+        gadm_id_by_region = gadm_id_by_region.query("GADM_ID in @unique_region_codes")
+        if not gadm_id_by_region.empty:
+            gadm_ids = gadm_id_by_region['GADM_ID']
+            country_to_remove = shapes.query("GADM_ID in @gadm_ids.values").country.unique()
+            demand_grouper[gadm_id_by_region.index] = gadm_ids.values
+            logger.info(
+                "GADM_ID found for the region codes in the load data. Proceeding with subregional grouping."
+            )
+
+            idx_to_replace = shapes.query("country in @country_to_remove").index
+            shapes.loc[idx_to_replace, "country"] = shapes.loc[idx_to_replace, "GADM_ID"]
+        else:
+            disagg_opt["geospatial"]["scaling"] = "default"
+            logger.warning(
+                "No matching GADM_ID found for the region codes in the load data. Proceeding with country-level grouping."
+            )
+
     demand_profiles = pd.concat(
         [
             upsample(cntry, group)
-            for cntry, group in regions.geometry.groupby(regions.country)
+            for cntry, group in regions.geometry.groupby(demand_grouper)
         ],
         axis=1,
     )

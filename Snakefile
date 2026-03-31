@@ -11,15 +11,13 @@ sys.path.append("./scripts")
 
 from shutil import copyfile, move
 
-from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
-
 from _helpers import (
     create_country_list,
     get_last_commit_message,
     check_config_version,
     copy_default_files,
     BASE_DIR,
-    branch,  # Remove if Snakemake >= 8.3.0
+    branch,  # Snakemake >= 8.3.0 provides branch but not compatible with *,**
 )
 from build_demand_profiles import get_load_paths_gegis
 from retrieve_databundle_light import (
@@ -29,7 +27,12 @@ from retrieve_databundle_light import (
 from pathlib import Path
 
 
-HTTP = HTTPRemoteProvider()
+# customize storage plugin
+storage:
+    provider="http",
+    keep_local=True,
+    retries=3,
+
 
 copy_default_files()
 
@@ -71,8 +74,8 @@ ATLITE_NPROCESSES = config["atlite"].get("nprocesses", 4)
 
 
 wildcard_constraints:
-    simpl="[a-zA-Z0-9]*|all",
-    clusters="[0-9]+(m|flex)?|all|min",
+    simpl=r"[a-zA-Z0-9]*|all",
+    clusters=r"[0-9]+(m|flex)?|all|min",
     ll=r"(v|c|l)([0-9\.]+|opt|all)|all",
     opts=r"[-+a-zA-Z0-9\.]*",
     unc=r"[-+a-zA-Z0-9\.]*",
@@ -80,7 +83,7 @@ wildcard_constraints:
     discountrate=r"[-+a-zA-Z0-9\.\s]*",
     demand=r"[-+a-zA-Z0-9\.\s]*",
     h2export=r"[0-9]+(\.[0-9]+)?",
-    planning_horizons="20[2-9][0-9]|2100",
+    planning_horizons=r"20[2-9][0-9]|2100",
 
 
 if config["custom_rules"] is not []:
@@ -445,15 +448,15 @@ if config["enable"].get("retrieve_cost_data", True):
         params:
             version=config["costs"]["technology_data_version"],
         input:
-            HTTP.remote(
-                f"raw.githubusercontent.com/PyPSA/technology-data/{config['costs']['technology_data_version']}/outputs/{cost_directory}"
-                + "costs_{year}.csv",
+            storage.http(
+                f"https://raw.githubusercontent.com/PyPSA/technology-data/{config['costs']['technology_data_version']}/outputs/{cost_directory}"
+                + "costs_{planning_horizons}.csv",
                 keep_local=True,
             ),
         output:
-            "resources/" + RDIR + "costs_{year}.csv",
+            "resources/" + RDIR + "costs_{planning_horizons}.csv",
         log:
-            "logs/" + RDIR + "retrieve_cost_data_{year}.log",
+            "logs/" + RDIR + "retrieve_cost_data_{planning_horizons}.log",
         resources:
             mem_mb=5000,
         run:

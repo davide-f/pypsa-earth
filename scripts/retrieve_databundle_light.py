@@ -690,7 +690,7 @@ def get_best_bundles_by_category(
 
                 returned_bundles.append(bname)
 
-    return returned_bundles
+    return sorted(returned_bundles)
 
 
 def get_best_bundles(

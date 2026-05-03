@@ -122,7 +122,6 @@ Exemplary unsolved network clustered to 37 nodes:
 """
 
 import logging
-import os
 from functools import reduce
 
 import geopandas as gpd

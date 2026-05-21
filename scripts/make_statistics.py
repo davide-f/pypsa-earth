@@ -230,7 +230,10 @@ def collect_clean_osm_stats(rulename="clean_osm_data", metric_crs="EPSG:3857"):
     return df_clean_osm_stats
 
 
-def collect_bus_regions_stats(bus_region_rule="build_bus_regions"):
+def collect_bus_regions_stats(
+    bus_region_rule="base_network",
+    include_computational_stats=True,
+):
     """
     Collect statistics on bus regions.
 
@@ -256,7 +259,8 @@ def collect_bus_regions_stats(bus_region_rule="build_bus_regions"):
             ),
         )
 
-    add_computational_stats(df, snakemake)
+    if include_computational_stats:
+        add_computational_stats(df, snakemake)
 
     return df
 
@@ -397,7 +401,6 @@ def collect_snakemake_stats(
         "clean_osm_data",
         "build_shapes",
         "build_osm_network",
-        "build_bus_regions",
         "build_demand_profiles",
         "build_powerplants",
         *[f"build_renewable_profiles_{rtech}" for rtech in ren_techs],
@@ -530,7 +533,7 @@ def calculate_stats(
     df_osm_raw = collect_raw_osm_stats(metric_crs=metric_crs)
     df_osm_clean = collect_clean_osm_stats(metric_crs=metric_crs)
     df_shapes = collect_shape_stats(area_crs=area_crs)
-    df_build_bus_regions = collect_bus_regions_stats()
+    df_bus_regions = collect_bus_regions_stats(include_computational_stats=False)
 
     df_only_computational = {
         rname: collect_only_computational(rname)
@@ -547,6 +550,9 @@ def calculate_stats(
             "solve_network",
         ]
     }
+    network_dict["base_network"] = pd.concat(
+        [network_dict["base_network"], df_bus_regions], axis=1
+    )
 
     # build_renewable_profiles rule
     ren_rule = "build_renewable_profiles"
@@ -561,7 +567,6 @@ def calculate_stats(
         "download_osm_data": df_osm_raw,
         "clean_osm_data": df_osm_clean,
         "build_shapes": df_shapes,
-        "build_bus_regions": df_build_bus_regions,
         **df_only_computational,
         **renewables_dict,
         **network_dict,

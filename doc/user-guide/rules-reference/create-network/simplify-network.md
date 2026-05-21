@@ -34,7 +34,7 @@ SPDX-License-Identifier: CC-BY-4.0
             label=add_electricity];
         4 -> 3;
         5	 [color="0.19 0.6 0.85",
-            label=build_bus_regions];
+            label=base_network];
         5 -> 3;
     }
 

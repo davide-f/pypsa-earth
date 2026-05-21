@@ -5,7 +5,7 @@
 
 # -*- coding: utf-8 -*-
 """
-Creates the network topology from a OpenStreetMap.
+Creates the network topology from OpenStreetMap and the corresponding bus regions.
 
 Relevant Settings
 -----------------
@@ -15,6 +15,10 @@ Relevant Settings
     snapshots:
 
     countries:
+
+    crs:
+
+    cluster_options:
 
     electricity:
         voltages:
@@ -42,20 +46,37 @@ Relevant Settings
 Inputs
 ------
 
-
+- ``resources/base_network/all_buses_build_network.csv``: OSM buses
+- ``resources/base_network/all_lines_build_network.csv``: OSM HVAC and HVDC lines
+- ``resources/base_network/all_converters_build_network.csv``: OSM converters
+- ``resources/base_network/all_transformers_build_network.csv``: OSM transformers
+- ``resources/shapes/country_shapes.geojson``: confer :ref:`shapes`
+- ``resources/shapes/offshore_shapes.geojson``: confer :ref:`shapes`
+- ``resources/shapes/gadm_shapes.geojson``: administrative shapes for alternative clustering
 
 Outputs
 -------
 
-- ``networks/base.nc``
+- ``networks/base.nc``:
 
     .. image:: /img/base.png
+        :width: 33 %
+
+- ``resources/bus_regions/regions_onshore.geojson``:
+
+    .. image:: /img/regions_onshore.png
+        :width: 33 %
+
+- ``resources/bus_regions/regions_offshore.geojson``:
+
+    .. image:: /img/regions_offshore.png
         :width: 33 %
 
 Description
 -----------
 """
 import os
+import warnings
 
 import geopandas as gpd
 import networkx as nx
@@ -65,7 +86,14 @@ import pypsa
 import scipy as sp
 import shapely.prepared
 import shapely.wkt
-from _helpers import configure_logging, create_logger, read_csv_nafix
+from _helpers import (
+    REGION_COLS,
+    configure_logging,
+    create_logger,
+    nearest_shape,
+    read_csv_nafix,
+)
+from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
 logger = create_logger(__name__)
@@ -473,6 +501,265 @@ def _set_countries_and_substations(inputs, base_network_config, countries_config
     return buses
 
 
+def voronoi(
+    points: pd.DataFrame,
+    outline: Polygon,
+    geo_crs: str = "EPSG:4326",
+) -> gpd.GeoSeries:
+    """
+    Create Voronoi polygons from a set of points within an outline.
+
+    Parameters
+    ----------
+    points : pd.DataFrame
+         DataFrame containing the coordinates of the points with columns ["x", "y"] and index
+    outline : Polygon
+        Shapely Polygon defining the outline within which to compute the Voronoi partition.
+    geo_crs : str
+        CRS used for geographic projection, passed to GeoPandas (e.g. "EPSG:4326")
+
+    Returns
+    -------
+    gpd.GeoSeries
+        GeoSeries of Voronoi polygons corresponding to each point in `points`,
+        clipped to the `outline` polygon.
+    """
+
+    pts = gpd.GeoSeries(
+        gpd.points_from_xy(points.x, points.y),
+        index=points.index,
+        crs=geo_crs,
+    )
+    voronoi = pts.voronoi_polygons(extend_to=outline).clip(outline)
+
+    # can be removed with shapely 2.1 where order is preserved
+    # https://github.com/shapely/shapely/issues/2020
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning)
+        pts = gpd.GeoDataFrame(geometry=pts)
+        voronoi = gpd.GeoDataFrame(geometry=voronoi)
+        joined = gpd.sjoin_nearest(pts, voronoi, how="right")
+
+    gdf = joined.dissolve(by=points.index.name).reindex(points.index).squeeze()
+
+    return gdf
+
+
+def get_gadm_shape(
+    onshore_buses: pd.DataFrame,
+    gadm_shapes: gpd.GeoDataFrame,
+    geo_crs: str = "EPSG:4326",
+    metric_crs: str = "EPSG:3857",
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Get the nearest GADM shape for each bus.
+
+    Parameters
+    ----------
+    onshore_buses: pd.DataFrame
+        DataFrame containing the onshore buses with columns ["x", "y"].
+    gadm_shapes: gpd.GeoDataFrame
+        GeoDataFrame containing the GADM shapes with a geometry column.
+    geo_crs : str
+        CRS used for geographic projection, passed to GeoPandas (e.g. "EPSG:4326").
+    metric_crs : str
+        CRS used for distance projection, passed to GeoPandas (e.g. "EPSG:3857").
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        A tuple containing the matching geometries and their GADM shape IDs.
+    """
+    geo_regions = gpd.GeoDataFrame(
+        onshore_buses[["x", "y"]],
+        geometry=gpd.points_from_xy(onshore_buses["x"], onshore_buses["y"]),
+        crs=geo_crs,
+    ).to_crs(metric_crs)
+
+    join_geos = gpd.sjoin_nearest(
+        geo_regions, gadm_shapes.to_crs(metric_crs), how="left"
+    )
+
+    # when duplicates, keep only the first entry
+    join_geos = join_geos[~join_geos.index.duplicated()]
+
+    gadm_sel = gadm_shapes.loc[join_geos[gadm_shapes.index.name].values]
+
+    return gadm_sel.geometry.values, gadm_sel.index.values
+
+
+def _get_optional_input(inputs, key, default=None):
+    return (
+        inputs.get(key, default)
+        if hasattr(inputs, "get")
+        else getattr(inputs, key, default)
+    )
+
+
+def build_bus_regions(
+    n: pypsa.Network,
+    inputs,
+    countries: list[str],
+    crs_config: dict,
+    alternative_clustering: bool,
+    config: dict | None = None,
+) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+    """
+    Create onshore and offshore bus regions for the base network.
+
+    The regions are produced from the same in-memory base network that is
+    exported by this rule. A network copy is used because subregion handling
+    temporarily rewrites bus country labels for region generation.
+    """
+    n = n.copy()
+    config = config or {}
+
+    country_shapes_fn = (
+        _get_optional_input(inputs, "subregion_shapes") or inputs.country_shapes
+    )
+    offshore_shapes_fn = (
+        _get_optional_input(inputs, "subregion_offshore") or inputs.offshore_shapes
+    )
+
+    geo_crs = crs_config["geo_crs"]
+    area_crs = crs_config["area_crs"]
+    metric_crs = crs_config["distance_crs"]
+
+    country_shapes = gpd.read_file(country_shapes_fn).set_index("name")["geometry"]
+
+    offshore_shapes = gpd.read_file(offshore_shapes_fn)
+    offshore_shapes = offshore_shapes.reindex(columns=REGION_COLS).set_index("name")[
+        "geometry"
+    ]
+
+    subregion_shapes = _get_optional_input(inputs, "subregion_shapes")
+    if subregion_shapes:
+        crs = {"geo_crs": geo_crs, "distance_crs": metric_crs}
+        tolerance = config.get("subregion", {}).get("tolerance", 100)
+        n = nearest_shape(n, country_shapes_fn, crs, tolerance=tolerance)
+
+        countries = list(country_shapes.index)
+
+    gadm_shapes = gpd.read_file(inputs.gadm_shapes).set_index("GADM_ID")
+
+    onshore_regions = []
+    offshore_regions = []
+
+    for country in countries:
+        c_b = n.buses.country == country
+        if n.buses.loc[c_b & n.buses.substation_lv, ["x", "y"]].empty:
+            logger.warning(f"No low voltage buses found for {country}!")
+            continue
+
+        onshore_shape = country_shapes[country]
+        onshore_locs = n.buses.loc[c_b & n.buses.substation_lv, ["x", "y"]]
+        gadm_country = gadm_shapes[gadm_shapes.country == country]
+        if alternative_clustering:
+            onshore_geometry, shape_id = get_gadm_shape(
+                onshore_locs,
+                gadm_country,
+                geo_crs,
+                metric_crs,
+            )
+        else:
+            onshore_geometry = voronoi(onshore_locs, onshore_shape)
+            shape_id = 0  # Not used
+
+        temp_region = gpd.GeoDataFrame(
+            {
+                "name": onshore_locs.index,
+                "x": onshore_locs["x"],
+                "y": onshore_locs["y"],
+                "geometry": onshore_geometry,
+                "country": country,
+                "shape_id": shape_id,
+            },
+            crs=geo_crs,
+        )
+        temp_region = temp_region[
+            temp_region.geometry.is_valid & ~temp_region.geometry.is_empty
+        ]
+        onshore_regions.append(temp_region)
+
+        if country not in offshore_shapes.index:
+            logger.warning(f"No off-shore shapes for {country}")
+            continue
+
+        offshore_shape = offshore_shapes[country]
+
+        if n.buses.loc[c_b & n.buses.substation_off, ["x", "y"]].empty:
+            logger.warning(f"No off-shore substations found for {country}")
+            continue
+
+        offshore_locs = n.buses.loc[c_b & n.buses.substation_off, ["x", "y"]]
+        shape_id = 0  # Not used
+        offshore_geometry = voronoi(offshore_locs, offshore_shape)
+        offshore_regions_c = gpd.GeoDataFrame(
+            {
+                "name": offshore_locs.index,
+                "x": offshore_locs["x"],
+                "y": offshore_locs["y"],
+                "geometry": offshore_geometry,
+                "country": country,
+                "shape_id": shape_id,
+            },
+            crs=country_shapes.crs,
+        )
+        offshore_regions_c = offshore_regions_c.loc[
+            offshore_regions_c.to_crs(area_crs).area > 1e-2
+        ]
+        offshore_regions_c = offshore_regions_c[
+            offshore_regions_c.geometry.is_valid & ~offshore_regions_c.geometry.is_empty
+        ]
+        offshore_regions.append(offshore_regions_c)
+
+    onshore_regions = gpd.GeoDataFrame(
+        pd.concat(onshore_regions, ignore_index=True),
+        crs=country_shapes.crs,
+    ).dropna(axis="index", subset=["geometry"])
+
+    if alternative_clustering:
+        # determine isolated buses
+        n.determine_network_topology()
+        non_isolated_buses = n.buses.duplicated(subset=["sub_network"], keep=False)
+        isolated_buses = n.buses[~non_isolated_buses].index
+        non_isolated_regions = onshore_regions[
+            ~onshore_regions.name.isin(isolated_buses)
+        ]
+        isolated_regions = onshore_regions[onshore_regions.name.isin(isolated_buses)]
+
+        # Combine regions while prioritizing non-isolated ones
+        onshore_regions = pd.concat(
+            [non_isolated_regions, isolated_regions]
+        ).drop_duplicates("shape_id", keep="first")
+
+        gadm_region_count = len(gadm_shapes[gadm_shapes.country.isin(countries)])
+        if len(onshore_regions) < gadm_region_count:
+            logger.warning(
+                "The number of remaining buses is less than the number of "
+                "administrative clusters suggested!"
+            )
+
+    if subregion_shapes:
+        logger.info("Deactivate subregion classification")
+        original_shapes = inputs.original_shapes
+        n = nearest_shape(n, original_shapes, crs, tolerance=tolerance)
+
+        onshore_regions["country"] = onshore_regions.name.map(n.buses.country)
+        for offshore_region in offshore_regions:
+            offshore_region["country"] = offshore_region.name.map(n.buses.country)
+
+    if offshore_regions:
+        offshore_regions = gpd.GeoDataFrame(
+            pd.concat(offshore_regions, ignore_index=True),
+            crs=country_shapes.crs,
+        )
+    else:
+        offshore_regions = offshore_shapes.to_frame()
+
+    return onshore_regions, offshore_regions
+
+
 def base_network(
     inputs,
     base_network_config,
@@ -554,8 +841,10 @@ if __name__ == "__main__":
     inputs = snakemake.input
 
     # Snakemake imports:
+    alternative_clustering = snakemake.params.alternative_clustering
     base_network_config = snakemake.params.base_network
     countries = snakemake.params.countries
+    crs = snakemake.params.crs
     hvdc_as_lines = snakemake.params.hvdc_as_lines
     lines = snakemake.params.lines
     links = snakemake.params.links
@@ -575,6 +864,17 @@ if __name__ == "__main__":
         voltages,
     )
 
-    n.buses = pd.DataFrame(n.buses.drop(columns="geometry"))
+    onshore_regions, offshore_regions = build_bus_regions(
+        n,
+        inputs,
+        countries,
+        crs,
+        alternative_clustering,
+        snakemake.config,
+    )
+
+    n.buses = pd.DataFrame(n.buses.drop(columns="geometry", errors="ignore"))
     n.meta = snakemake.config
-    n.export_to_netcdf(snakemake.output[0])
+    n.export_to_netcdf(snakemake.output.network)
+    onshore_regions.to_file(snakemake.output.regions_onshore)
+    offshore_regions.to_file(snakemake.output.regions_offshore)

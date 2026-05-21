@@ -1945,7 +1945,7 @@ def crop_offshore(
         either equal to the full country offshore area (single subregion) or Voronoi-partitioned among multiple subregions.
     """
 
-    from build_bus_regions import voronoi
+    from base_network import voronoi
 
     # Determine country for each subregion
     subregion_dict = determine_subregion_country(

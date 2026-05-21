@@ -54,7 +54,6 @@ nav:
       - Retrieve Data Bundle: user-guide/rules-reference/download-and-filter/retrieve-databundle-light.md
     - Populate Data:
       - Overview: user-guide/rules-reference/populate/index.md
-      - Build Bus Regions: user-guide/rules-reference/populate/build-bus-regions.md
       - Build Cutout: user-guide/rules-reference/populate/build-cutout.md
       - Build Demand Profiles: user-guide/rules-reference/populate/build-demand-profiles.md
       - Build Natura Raster: user-guide/rules-reference/populate/build-natura-raster.md

@@ -314,6 +314,8 @@ def retrieve_subregion(script_name):
 
 rule base_network:
     params:
+        alternative_clustering=config["cluster_options"]["alternative_clustering"],
+        crs=config["crs"],
         voltages=config["electricity"]["voltages"],
         transformers=config["transformers"],
         snapshots=config["snapshots"],
@@ -323,6 +325,7 @@ rule base_network:
         countries=config["countries"],
         base_network=config["base_network"],
     input:
+        **retrieve_subregion("cluster_network"),
         osm_buses="resources/" + RDIR + "base_network/all_buses_build_network.csv",
         osm_lines="resources/" + RDIR + "base_network/all_lines_build_network.csv",
         osm_converters="resources/"
@@ -333,46 +336,31 @@ rule base_network:
         + "base_network/all_transformers_build_network.csv",
         country_shapes="resources/" + RDIR + "shapes/country_shapes.geojson",
         offshore_shapes="resources/" + RDIR + "shapes/offshore_shapes.geojson",
+        #gadm_shapes="resources/" + RDIR + "shapes/MAR2.geojson",
+        #using this line instead of the following will test updated gadm shapes for MA.
+        #To use: download file from the google drive and place it in resources/" + RDIR + "shapes/
+        #Link: https://drive.google.com/drive/u/1/folders/1dkW1wKBWvSY4i-XEuQFFBj242p0VdUlM
+        gadm_shapes="resources/" + RDIR + "shapes/gadm_shapes.geojson",
     output:
-        "networks/" + RDIR + "base.nc",
+        network="networks/" + RDIR + "base.nc",
+        regions_onshore="resources/" + RDIR + "bus_regions/regions_onshore.geojson",
+        regions_offshore="resources/" + RDIR + "bus_regions/regions_offshore.geojson",
     log:
         "logs/" + RDIR + "base_network.log",
     benchmark:
         "benchmarks/" + RDIR + "base_network"
     threads: 1
     resources:
-        mem_mb=500,
+        mem_mb=1000,
     script:
         "scripts/base_network.py"
 
 
 rule build_bus_regions:
-    params:
-        alternative_clustering=config["cluster_options"]["alternative_clustering"],
-        crs=config["crs"],
-        countries=config["countries"],
+    # Compatibility target: bus regions are now produced by rule base_network.
     input:
-        **retrieve_subregion("cluster_network"),
-        country_shapes="resources/" + RDIR + "shapes/country_shapes.geojson",
-        offshore_shapes="resources/" + RDIR + "shapes/offshore_shapes.geojson",
-        base_network="networks/" + RDIR + "base.nc",
-        #gadm_shapes="resources/" + RDIR + "shapes/MAR2.geojson",
-        #using this line instead of the following will test updated gadm shapes for MA.
-        #To use: downlaod file from the google drive and place it in resources/" + RDIR + "shapes/
-        #Link: https://drive.google.com/drive/u/1/folders/1dkW1wKBWvSY4i-XEuQFFBj242p0VdUlM
-        gadm_shapes="resources/" + RDIR + "shapes/gadm_shapes.geojson",
-    output:
         regions_onshore="resources/" + RDIR + "bus_regions/regions_onshore.geojson",
         regions_offshore="resources/" + RDIR + "bus_regions/regions_offshore.geojson",
-    log:
-        "logs/" + RDIR + "build_bus_regions.log",
-    benchmark:
-        "benchmarks/" + RDIR + "build_bus_regions"
-    threads: 1
-    resources:
-        mem_mb=1000,
-    script:
-        "scripts/build_bus_regions.py"
 
 
 def terminate_if_cutout_exists(w):

@@ -5,6 +5,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Rule `base_network`
 
+`base_network` now creates both the PyPSA base network and the onshore/offshore bus region GeoJSON files used by downstream rules.
+
 !!! note "Workflow Diagram"
     See the complete workflow in the repository.
 
@@ -25,14 +27,11 @@ SPDX-License-Identifier: CC-BY-4.0
         ];
         4	 [color="0.50 0.6 0.85",
             label=add_electricity];
-        5	 [color="0.36 0.6 0.85",
-            label=build_bus_regions];
         6	 [color="0.58 0.6 0.85",
             fillcolor=gray,
             label=base_network,
             style=filled];
         6 -> 4;
-        6 -> 5;
         7	 [color="0.31 0.6 0.85",
             label=build_powerplants];
         6 -> 7;

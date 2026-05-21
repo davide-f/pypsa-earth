@@ -95,7 +95,6 @@ add_extra_components  1
 base_network  1
 build_base_energy_totals  1
 build_base_industry_totals1
-build_bus_regions 1
 build_clustered_population_layouts1
 build_cop_profiles1
 build_demand_profiles 1
@@ -130,7 +129,7 @@ retrieve_databundle_light 1
 simplify_network  1
 solve_sector_network  1
 solve_sector_networks 1
-total45
+total44
 ```
 
 ## Myopic Foresight Scenarios
@@ -209,7 +208,6 @@ add_extra_components   1
 base_network   1
 build_base_energy_totals   1
 build_base_industry_totals 1
-build_bus_regions  1
 build_clustered_population_layouts 1
 build_cop_profiles 1
 build_demand_profiles  1
@@ -246,7 +244,7 @@ retrieve_databundle_light  1
 simplify_network   1
 solve_all_networks_myopic  1
 solve_network_myopic   1
-total 48
+total 47
 ```
 
 ## Scaling-Up

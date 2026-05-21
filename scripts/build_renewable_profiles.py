@@ -64,8 +64,8 @@ Inputs
 
 - ``resources/natura.tiff``: confer :ref:`natura`
 - ``resources/offshore_shapes.geojson``: confer :ref:`shapes`
-- ``resources/.geojson``: (if not offshore wind), confer :ref:`busregions`
-- ``resources/regions_offshore.geojson``: (if offshore wind), :ref:`busregions`
+- ``resources/regions_onshore.geojson``: (if not offshore wind), confer :mod:`base_network`
+- ``resources/regions_offshore.geojson``: (if offshore wind), confer :mod:`base_network`
 - ``"cutouts/" + config["renewable"][{technology}]['cutout']``: :ref:`cutout`
 - ``networks/base.nc``: :ref:`base`
 

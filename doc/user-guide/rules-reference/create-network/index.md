@@ -9,7 +9,7 @@ The simplification `snakemake` rules prepare **approximations** of the full mode
 
 ## Rules
 
-- **[base_network](base-network.md)** - Builds and stores the base network with all buses, HVAC lines and HVDC links.
+- **[base_network](base-network.md)** - Builds and stores the base network with all buses, HVAC lines, HVDC links, and bus region geometries.
 
 - **[add_electricity](add-electricity.md)** - Adds the generators and demand to the network model.
 

@@ -94,7 +94,6 @@ job  count
 add_electricity  1
 add_extra_components 1
 base_network 1
-build_bus_regions1
 build_demand_profiles1
 build_natura_raster  1
 build_osm_network1
@@ -105,12 +104,14 @@ clean_osm_data   1
 cluster_network  1
 download_osm_data1
 prepare_network  1
+process_cost_data1
 retrieve_cost_data   1
+retrieve_cutout1
 retrieve_databundle_light1
 simplify_network 1
 solve_all_networks   1
 solve_network1
-total   23
+total   24
 ```
 
 To run the whole model workflow you just need the following command:

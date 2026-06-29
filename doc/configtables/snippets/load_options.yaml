@@ -1,5 +1,10 @@
 load_options:
-  ssp: "ssp2-2.6" # shared socio-economic pathway (GDP and population growth) scenario to consider
-  weather_year: 2013 # Load scenarios available with different weather year (different renewable potentials)
-  prediction_year: 2030 # Load scenarios available with different prediction year (GDP, population)
+  source: "gegis" # "demcast" or "gegis"
+  weather_year: 2013 # Weather year of the load profile
+  prediction_year: 2030 # Valid only if "gegis" used as a source
   scale: 1 # scales all load time-series, i.e. 2 = doubles load
+  disaggregation:
+    method: default  # supported values. "default" is based on the standard approach by population and gdp, "geospatial" employs a geospatial shape to scale demand
+    geospatial:
+      source: "resources/shapes/gadm_shapes.geojson"  # path to the geospatial file, the column "demand" is needed
+      scaling: "subregional" # "absolute" or "relative" or "subregional": relative means that entries of the geospatial file are scaled to the total load of the country, absolute means that entries represent the total demand

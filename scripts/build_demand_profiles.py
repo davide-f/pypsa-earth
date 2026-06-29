@@ -334,7 +334,6 @@ def build_demand_profiles(
 
     scale = load_options.get("scale", 1.0)
     load_source = load_options["source"]
-    load_paths = load_options["load_paths"]
     weather_year = load_options["weather_year"]
     disagg_opt = load_options["disaggregation"]
 

@@ -603,36 +603,6 @@ def check_flag(d: dict, field: str) -> bool:
     return (not isinstance(safe_field, bool)) or safe_field
 
 
-def save_availability_debug_outputs(availability, output_profile):
-    """
-    Save availability as NetCDF and as a quick-look PNG image.
-    """
-    base, _ = os.path.splitext(output_profile)
-    availability_nc = f"{base}_availability.nc"
-    availability_png = f"{base}_availability.png"
-
-    availability.to_netcdf(availability_nc)
-    logger.info(f"Saved availability matrix to {availability_nc}")
-
-    # Plot sum across buses to visualize spatial eligibility intensity.
-    availability_map = availability.sum("bus")
-
-    try:
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-        availability_map.plot(ax=ax, cmap="viridis")
-        ax.set_title("Availability (sum over buses)")
-        fig.tight_layout()
-        fig.savefig(availability_png, dpi=200)
-        plt.close(fig)
-        logger.info(f"Saved availability image to {availability_png}")
-    except Exception as exc:
-        logger.warning(
-            f"Could not save availability image '{availability_png}': {exc}"
-        )
-
-
 if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
@@ -684,15 +654,6 @@ if __name__ == "__main__":
         cutout = filter_cutout_region(cutout, regions)
 
     cutout = regularize_cutout_coordinates(cutout, spacing=0.3)
-    
-    # x_vals = cutout.data.x.values
-    # keep = np.ones(len(x_vals), dtype=bool)
-    # for i in range(1, len(x_vals)):
-    #     if x_vals[i] - x_vals[i-1] < 0.01:
-    #         keep[i] = False
-    # print(f"Removing {(~keep).sum()} near-duplicate x cells")
-
-    # cutout.data = cutout.data.isel(x=keep)
 
     buses = regions.index
 
@@ -817,11 +778,6 @@ if __name__ == "__main__":
 
         excluder = atlite.ExclusionContainer(crs=area_crs, res=100)
 
-        # regions = regions[regions.shape_id.str.startswith("CN.4.1_1")]
-        # buses = regions.index
-
-        regions.to_file("regions_selection.geojson")
-
         if check_flag(config, "natura"):
             excluder.add_raster(paths.natura, nodata=0, allow_no_overlap=True)
 
@@ -868,8 +824,6 @@ if __name__ == "__main__":
             logger.info(f"Completed availability calculation ({duration:2.2f}s)")
         else:
             availability = cutout.availabilitymatrix(regions, excluder, **kwargs)
-
-        save_availability_debug_outputs(availability, snakemake.output.profile)
 
         area = cutout.grid.to_crs(area_crs).area / 1e6
         area = xr.DataArray(

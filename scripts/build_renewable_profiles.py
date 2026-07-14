@@ -433,8 +433,12 @@ def regularize_cutout_coordinates(cutout, spacing=0.3, tolerance=0.02):
                 f"Adding {missing} missing '{dim}' coordinates with NaN values to restore regular spacing {spacing}."
             )
 
-        # Ensure the final axis is complete and regularly spaced; missing points stay NaN.
-        ds = ds.reindex({dim: full_axis})
+            # Ensure the final axis is complete and regularly spaced; missing points stay NaN.
+            ds = ds.reindex({dim: full_axis}, copy=False)
+        else:
+            logger.info(
+                f"'{dim}' coordinates already complete at spacing {spacing}; skipping reindex."
+            )
         return ds
 
     cutout.data = _regularize_axis(cutout.data, "x")

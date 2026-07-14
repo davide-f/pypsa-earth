@@ -375,7 +375,67 @@ def filter_cutout_region(cutout, regions):
     minx, miny, maxx, maxy = regions.total_bounds
     minx, maxx = max(-180.0, minx - cutout.dx), min(180.0, maxx + cutout.dx)
     miny, maxy = max(-90.0, miny - cutout.dy), min(90.0, maxy + cutout.dy)
-    cutout.data = cutout.data.sel(x=slice(minx, maxx), y=slice(miny, maxy))
+    cutout = cutout.sel(x=slice(minx, maxx), y=slice(miny, maxy))
+    return cutout
+
+
+def regularize_cutout_coordinates(cutout, spacing=0.3, tolerance=0.02):
+    """
+    Regularize cutout x/y coordinates to a fixed spacing by snapping and filling gaps.
+
+    This is a temporary safeguard against numerical jitter in cutout coordinates
+    (e.g. 131.39999 vs 131.4) that can create duplicated or irregular axis points.
+    """
+
+    def _regularize_axis(ds, dim):
+        values = np.asarray(ds.coords[dim].values, dtype=float)
+        if values.size == 0:
+            return ds
+
+        # Keep only coordinates that are multiples of the spacing (within tolerance).
+        snapped = np.rint(values / spacing) * spacing
+        keep = np.abs(values - snapped) <= tolerance
+        dropped = int((~keep).sum())
+        if dropped > 0:
+            logger.warning(
+                f"Dropping {dropped} irregular '{dim}' coordinates outside tolerance {tolerance}."
+            )
+
+        ds = ds.isel({dim: keep})
+        snapped = np.round(snapped[keep], 6)
+
+        # Replace axis values with snapped coordinate labels.
+        ds = ds.assign_coords({dim: snapped})
+
+        # Drop duplicate grid points created by jitter around the same snapped value.
+        axis = np.asarray(ds.coords[dim].values, dtype=float)
+        _, keep_idx = np.unique(axis, return_index=True)
+        if len(keep_idx) < len(axis):
+            logger.warning(
+                f"Dropping {len(axis) - len(keep_idx)} duplicated '{dim}' coordinates after snapping."
+            )
+            ds = ds.isel({dim: np.sort(keep_idx)})
+
+        axis = np.asarray(ds.coords[dim].values, dtype=float)
+        if axis.size == 0:
+            return ds
+
+        steps_axis = np.rint(axis / spacing).astype(int)
+        full_steps = np.arange(steps_axis.min(), steps_axis.max() + 1)
+        full_axis = np.round(full_steps * spacing, 6)
+
+        missing = len(full_axis) - len(axis)
+        if missing > 0:
+            logger.warning(
+                f"Adding {missing} missing '{dim}' coordinates with NaN values to restore regular spacing {spacing}."
+            )
+
+        # Ensure the final axis is complete and regularly spaced; missing points stay NaN.
+        ds = ds.reindex({dim: full_axis})
+        return ds
+
+    cutout.data = _regularize_axis(cutout.data, "x")
+    cutout.data = _regularize_axis(cutout.data, "y")
     return cutout
 
 
@@ -585,6 +645,8 @@ if __name__ == "__main__":
     if not snakemake.wildcards.technology.startswith("hydro"):
         # the region should be restricted for non-hydro technologies, as the hydro potential is calculated across hydrobasins which may span beyond the region of the country
         cutout = filter_cutout_region(cutout, regions)
+
+    cutout = regularize_cutout_coordinates(cutout, spacing=0.3)
 
     buses = regions.index
 

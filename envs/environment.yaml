@@ -22,7 +22,7 @@ dependencies:
 - xlrd
 - openpyxl
 - seaborn
-- snakemake-minimal<8
+- snakemake-minimal>=8.26.0
 - memory_profiler
 - ruamel.yaml>=0.18
 - pytables

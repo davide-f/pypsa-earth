@@ -152,21 +152,25 @@ if config["enable"].get("retrieve_databundle", True):
         config, exclude_categories=["cutouts"]
     )
 
-    rule retrieve_databundle_light:
-        params:
-            bundles_to_download=bundles_to_download,
-            hydrobasins_level=config["renewable"]["hydro"]["hydrobasins_level"],
-        output:  #expand(directory('{file}') if isdir('{file}') else '{file}', file=datafiles)
-            expand(
-                "{file}", file=datafiles_retrivedatabundle(config, bundles_to_download)
-            ),
-            directory("data/landcover"),
-        log:
-            "logs/" + RDIR + "retrieve_databundle.log",
-        benchmark:
-            "benchmarks/" + RDIR + "retrieve_databundle_light"
-        script:
-            "scripts/retrieve_databundle_light.py"
+    for bundle in bundles_to_download:
+        output_files = datafiles_retrivedatabundle(config, [bundle])
+        contains_landcover = any([f for f in output_files if "landcover" in f])
+
+        rule:
+            name:
+                f"retrieve_{bundle}"
+            params:
+                bundles_to_download=[bundle],
+                hydrobasins_level=config["renewable"]["hydro"]["hydrobasins_level"],
+            output:
+                expand("{file}", file=output_files),
+                branch(contains_landcover, directory("data/landcover")),
+            log:
+                "logs/" + RDIR + f"retrieve_{bundle}.log",
+            benchmark:
+                "benchmarks/" + RDIR + f"retrieve_{bundle}"
+            script:
+                "scripts/retrieve_databundle_light.py"
 
 
 if config["enable"].get("download_global_buildings", True):

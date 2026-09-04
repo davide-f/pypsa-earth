@@ -11,8 +11,6 @@ sys.path.append("./scripts")
 from pathlib import Path
 from shutil import copyfile, move, unpack_archive
 
-from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
-
 from _helpers import branch  # Remove if Snakemake >= 8.3.0
 from _helpers import (
     BASE_DIR,
@@ -29,9 +27,6 @@ from retrieve_databundle_light import (
     datafiles_retrivedatabundle,
     get_best_bundles_in_snakemake,
 )
-from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
-
-HTTP = HTTPRemoteProvider()
 
 copy_default_files()
 
@@ -42,6 +37,10 @@ configfile: "configs/solving.default.yaml"
 configfile: "configs/bundle_config.yaml"
 configfile: "configs/powerplantmatching_config.yaml"
 configfile: "config.yaml"
+
+
+storage:
+    provider="http",
 
 
 check_config_version(config=config)
@@ -513,8 +512,8 @@ if config["enable"].get("retrieve_cost_data", True):
         params:
             version=config["costs"]["technology_data_version"],
         input:
-            HTTP.remote(
-                f"raw.githubusercontent.com/PyPSA/technology-data/{config['costs']['technology_data_version']}/outputs/{cost_directory}"
+            storage.http(
+                f"https://raw.githubusercontent.com/PyPSA/technology-data/{config['costs']['technology_data_version']}/outputs/{cost_directory}"
                 + "costs_{year}.csv",
                 keep_local=True,
             ),
@@ -911,7 +910,7 @@ if config["co2"]["automatic_emission"]["enable"]:
 
     rule retrieve_emissions:
         input:
-            HTTP.remote(
+            storage.http(
                 "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/v60_GHG/CO2_excl_short-cycle_org_C/v60_GHG_CO2_excl_short-cycle_org_C_1970_2018.zip",
                 keep_local=True,
             ),
@@ -1210,7 +1209,7 @@ rule prepare_transport_data_input:
 
 rule retrieve_potash_data:
     input:
-        potash_zip=HTTP.remote(
+        potash_zip=storage.http(
             "https://pubs.usgs.gov/sir/2010/5090/s/PotashGIS.zip",
             keep_local=True,
         ),

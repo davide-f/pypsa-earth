@@ -640,7 +640,7 @@ if __name__ == "__main__":
             ).to_netcdf(snakemake.output.profile)
         else:
             # otherwise perform the calculations
-            inflow = correction_factor * func(capacity_factor=True, **resource)
+            inflow = correction_factor * func(aggregate_time="mean", **resource)
 
             if "clip_min_inflow" in config:
                 inflow = inflow.where(inflow >= config["clip_min_inflow"], 0)
@@ -762,7 +762,7 @@ if __name__ == "__main__":
 
         potential = capacity_per_sqkm * availability.sum("bus") * area
 
-        capacity_factor = correction_factor * func(capacity_factor=True, **resource)
+        capacity_factor = correction_factor * func(aggregate_time="mean", **resource)
         layout = capacity_factor * area * capacity_per_sqkm
 
         n_cells_lost = check_cutout_completness(capacity_factor)

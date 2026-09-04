@@ -398,7 +398,6 @@ dependencies:
 - pydantic=2.13.5=pyhcf101f3_0
 - pydantic-core=2.46.5=py312ha80e978_1
 - pydeck=0.9.3=pyhd8ed1ab_0
-- pydoe2=1.3.0=pyhd8ed1ab_1
 - pygments=2.21.0=pyhcf101f3_0
 - pyjwt=2.13.0=pyhcf101f3_0
 - pyobjc-core=11.0=py312hb9d441b_0

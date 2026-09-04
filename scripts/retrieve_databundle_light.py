@@ -157,7 +157,7 @@ def download_and_unzip_zenodo(
     True when download is successful, False otherwise
     """
     resource = config["category"]
-    file_path = os.path.join(rootpath, "tempfile.zip")
+    file_path = os.path.join(rootpath, f"tempfile_{resource}.zip")
     destination = os.path.join(BASE_DIR, config["destination"])
     url = config["urls"]["zenodo"]
 
@@ -204,7 +204,7 @@ def download_and_unzip_gdrive(
     True when download is successful, False otherwise
     """
     resource = config["category"]
-    file_path = os.path.join(rootpath, "tempfile.zip")
+    file_path = os.path.join(rootpath, f"tempfile_{resource}.zip")
     destination = os.path.join(BASE_DIR, config["destination"])
     url = config["urls"]["gdrive"]
 
@@ -282,7 +282,7 @@ def download_and_unzip_protectedplanet(
     True when download is successful, False otherwise
     """
     resource = config["category"]
-    file_path = os.path.join(rootpath, "tempfile_wpda.zip")
+    file_path = os.path.join(rootpath, f"tempfile_{resource}.zip")
     destination = os.path.join(BASE_DIR, config["destination"])
     url = config["urls"]["protectedplanet"]
 

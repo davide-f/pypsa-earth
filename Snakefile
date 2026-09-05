@@ -153,8 +153,22 @@ if config["enable"].get("retrieve_databundle", True):
         config["databundles"], exclude_categories=["cutouts"]
     )
 
-    for category in databundle_categories:
-        bundles = get_best_bundles_in_snakemake(config, include_categories=[category])
+    bundle_dict = {
+        category: get_best_bundles_in_snakemake(config, include_categories=[category])
+        for category in databundle_categories
+    }
+
+    # List selected bundles for each category
+    print("\n====================================================")
+    print("Selected bundles for each category:")
+    for category, bundles in bundle_dict.items():
+        print(f"\t{category}: {bundles}")
+        # output files for each category
+        output_files = datafiles_retrivedatabundle(config, bundles)
+        print(f"\t\tOutput files: {output_files}")
+    print("====================================================\n")
+
+    for category, bundles in bundle_dict.items():
         output_files = datafiles_retrivedatabundle(config, bundles)
         contains_landcover = any([f for f in output_files if "landcover" in f])
 

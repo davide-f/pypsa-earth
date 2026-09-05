@@ -26,6 +26,7 @@ from build_demand_profiles import get_load_paths_gegis
 from retrieve_databundle_light import (
     datafiles_retrivedatabundle,
     get_best_bundles_in_snakemake,
+    get_databundle_categories,
 )
 
 copy_default_files()
@@ -148,27 +149,29 @@ rule plot_all_summaries:
 
 if config["enable"].get("retrieve_databundle", True):
 
-    bundles_to_download = get_best_bundles_in_snakemake(
-        config, exclude_categories=["cutouts"]
+    databundle_categories = get_databundle_categories(
+        config["databundles"], exclude_categories=["cutouts"]
     )
 
-    for bundle in bundles_to_download:
-        output_files = datafiles_retrivedatabundle(config, [bundle])
+    for category in databundle_categories:
+        bundles = get_best_bundles_in_snakemake(config, include_categories=[category])
+        output_files = datafiles_retrivedatabundle(config, bundles)
         contains_landcover = any([f for f in output_files if "landcover" in f])
 
         rule:
             name:
-                f"retrieve_{bundle}"
+                f"retrieve_databundle_{category}"
             params:
-                bundles_to_download=[bundle],
+                tutorial=config["tutorial"],
+                bundles_to_download=bundles,
                 hydrobasins_level=config["renewable"]["hydro"]["hydrobasins_level"],
             output:
                 expand("{file}", file=output_files),
                 branch(contains_landcover, directory("data/landcover")),
             log:
-                "logs/" + RDIR + f"retrieve_{bundle}.log",
+                "logs/" + RDIR + f"retrieve_databundle_{category}.log",
             benchmark:
-                "benchmarks/" + RDIR + f"retrieve_{bundle}"
+                "benchmarks/" + RDIR + f"retrieve_databundle_{category}"
             script:
                 "scripts/retrieve_databundle_light.py"
 
@@ -440,8 +443,11 @@ if config["enable"].get("retrieve_cutout", False):
         config, include_categories=["cutouts"]
     )
 
+    print("Cutout to download: ", cutout_to_download)
+
     rule retrieve_cutout:
         params:
+            tutorial=config["tutorial"],
             bundles_to_download=cutout_to_download,
             hydrobasins_level=[],
         input:

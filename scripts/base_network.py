@@ -506,9 +506,7 @@ def _set_electrical_parameters_lines(
     lines["carrier"] = "AC"
     lines["dc"] = False
 
-    lines.loc[:, "type"] = lines.v_nom.apply(
-        lambda x: _get_linetype_by_voltage(x, linetypes)
-    )
+    lines["type"] = lines.v_nom.apply(lambda x: _get_linetype_by_voltage(x, linetypes))
 
     lines["s_max_pu"] = lines_config["s_max_pu"]
 
@@ -543,9 +541,7 @@ def _set_electrical_parameters_dc_lines(
 
     lines["carrier"] = "DC"
     lines["dc"] = True
-    lines.loc[:, "type"] = lines.v_nom.apply(
-        lambda x: _get_linetype_by_voltage(x, linetypes)
-    )
+    lines["type"] = lines.v_nom.apply(lambda x: _get_linetype_by_voltage(x, linetypes))
 
     lines["s_max_pu"] = lines_config["s_max_pu"]
 
@@ -861,11 +857,11 @@ def base_network(
     n.set_snapshots(pd.date_range(freq="h", **snapshots_config))
     n.snapshot_weightings[:] *= 8760.0 / n.snapshot_weightings.sum()
 
-    n.import_components_from_dataframe(buses, "Bus")
+    n.add("Bus", buses.index, **buses)
 
     if hvdc_as_lines_config:
         lines = pd.concat([lines_ac, lines_dc])
-        n.import_components_from_dataframe(lines, "Line")
+        n.add("Line", lines.index, **lines)
     else:
         lines_dc = _set_electrical_parameters_links(links_config, lines_dc)
         # parse line information into p_nom required for converters
@@ -874,11 +870,11 @@ def base_network(
             axis=1,
             result_type="reduce",
         )
-        n.import_components_from_dataframe(lines_ac, "Line")
-        n.import_components_from_dataframe(lines_dc, "Link")
+        n.add("Line", lines_ac.index, **lines_ac)
+        n.add("Link", lines_dc.index, **lines_dc)
 
-    n.import_components_from_dataframe(transformers, "Transformer")
-    n.import_components_from_dataframe(converters, "Link")
+    n.add("Transformer", transformers.index, **transformers)
+    n.add("Link", converters.index, **converters)
 
     # greenfield capacity expansion is represented with null capacity using num_parallel==0
     n.lines["num_parallel"] = n.lines["num_parallel"].where(

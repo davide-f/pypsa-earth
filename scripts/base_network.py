@@ -506,9 +506,7 @@ def _set_electrical_parameters_lines(
     lines["carrier"] = "AC"
     lines["dc"] = False
 
-    lines.loc[:, "type"] = lines.v_nom.apply(
-        lambda x: _get_linetype_by_voltage(x, linetypes)
-    )
+    lines["type"] = lines.v_nom.apply(lambda x: _get_linetype_by_voltage(x, linetypes))
 
     lines["s_max_pu"] = lines_config["s_max_pu"]
 
@@ -543,9 +541,7 @@ def _set_electrical_parameters_dc_lines(
 
     lines["carrier"] = "DC"
     lines["dc"] = True
-    lines.loc[:, "type"] = lines.v_nom.apply(
-        lambda x: _get_linetype_by_voltage(x, linetypes)
-    )
+    lines["type"] = lines.v_nom.apply(lambda x: _get_linetype_by_voltage(x, linetypes))
 
     lines["s_max_pu"] = lines_config["s_max_pu"]
 

@@ -96,6 +96,7 @@ def populate_db(tech_col, carrier, flow, tech, ngv=False):  # TODO Add scenario 
     #     dbf.name=dbf.name.str.replace(' '+tech, '')
     dbf = (
         dbf.stack()
+        .dropna()
         .reset_index(level=0)
         .rename(columns={"snapshot": "DateTime", 0: "value"})
         .reset_index()
@@ -131,7 +132,7 @@ def add_gen(tech, carrier, reg=False):
 def add_load(tech, carrier, reg=False):
     global db
     if tech == "ac":
-        ac_labels = loads.stack().reset_index(level=1).level_1
+        ac_labels = loads.stack().dropna().reset_index(level=1).level_1
         ac_labels = ac_labels[ac_labels.str.len() < 11].unique()
         tech_col = loads.filter(ac_labels.tolist())
         # ac_labels = loads.reset_index()[loads.reset_index().name.str.len()<7].name.tolist() #TODO hard coded

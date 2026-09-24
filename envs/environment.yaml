@@ -8,9 +8,8 @@ channels:
 - bioconda
 - gurobi
 dependencies:
-- python>=3.10, <3.12  # 3.12 has weird issues with snakemake https://github.com/snakemake/snakemake/issues/2480
+- python>=3.10,<3.14
 - pip
-- setuptools<81
 
 - pypsa>=0.33
 - atlite=0.4.1 # in versions >0.4.1 the computation of availability matrix in `build_renewable_profiles` fails due to https://github.com/PyPSA/atlite/issues/301 https://github.com/PyPSA/atlite/issues/514 for countries whose cutouts span over geometries crossing the antimeridian
@@ -22,7 +21,9 @@ dependencies:
 - xlrd
 - openpyxl
 - seaborn
-- snakemake-minimal<8
+- snakemake-minimal>=8.26.0
+- snakemake-storage-plugin-http>=0.3
+- snakemake-storage-plugin-cached-http >=0.2.1
 - memory_profiler
 - ruamel.yaml>=0.18
 - pytables
@@ -38,7 +39,6 @@ dependencies:
 - libgdal-netcdf
 - networkx
 - scipy
-- pydoe2
 - shapely!=2.0.4
 - pre-commit
 - matplotlib

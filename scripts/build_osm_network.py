@@ -551,11 +551,10 @@ def merge_stations_lines_by_station_id_and_voltage(
 
 def fix_overpassing_lines(lines, buses, distance_crs, tol=1):
     """
-    Snap buses to lines that are within a certain tolerance. It does this by
-    first buffering the buses by the tolerance distance, and then performing a
-    spatial join to find all lines that intersect with the buffers. For each
-    group of lines that intersect with a buffer, the function identifies the
-    points that overpass the line (i.e., are not snapped to the line), and then
+    Snap buses to lines that are within a certain tolerance. It uses a spatial
+    index to find buses within the tolerance of each line. For each group of
+    buses near a line, the function identifies the points that overpass the
+    line (i.e., are not snapped to the line), and then
     snaps those points to the nearest point on the line. The line is then split
     at each snapped point, resulting in a new set of lines that are snapped to
     the buses. The function returns a GeoDataFrame containing the snapped
@@ -594,11 +593,16 @@ def fix_overpassing_lines(lines, buses, distance_crs, tol=1):
     # set index to bus_id
     df_p.set_index(bus_id_str, inplace=True)
 
-    # Buffer points to create areas for spatial join
-    buffer_df = df_p.buffer(tol).to_frame()
+    # spatial join to identify which buses are within the tolerance of each line
+    line_positions, point_positions = df_p.sindex.query(
+        df_l.geometry, predicate="dwithin", distance=tol
+    )
 
-    # Spatial join to find lines intersecting point buffers
-    joined = gpd.sjoin(df_l, buffer_df, how="inner", predicate="intersects")
+    # create dataframe with the joined data (line_id and bus_id)
+    joined = pd.DataFrame(
+        {bus_id_str: df_p.index.to_numpy()[point_positions]},
+        index=df_l.index.to_numpy()[line_positions],
+    )
 
     # group lines by their index
     group_lines = joined.groupby(level=0)
@@ -608,7 +612,7 @@ def fix_overpassing_lines(lines, buses, distance_crs, tol=1):
         line_geom = df_l.loc[i, "geometry"]
 
         # get the indices of the points that intersect with the line
-        points_indexes = group[buffer_df.index.name].tolist()
+        points_indexes = group[bus_id_str].tolist()
 
         # get the geometries of the points that intersect with the line
         all_points = df_p.loc[points_indexes, "geometry"]

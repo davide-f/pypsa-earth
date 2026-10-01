@@ -594,9 +594,21 @@ def fix_overpassing_lines(lines, buses, distance_crs, tol=1):
     df_p.set_index(bus_id_str, inplace=True)
 
     # spatial join to identify which buses are within the tolerance of each line
+    # line_positions[k] is the line of the k-th match that corresponds to the bus at point_positions[k]
     line_positions, point_positions = df_p.sindex.query(
         df_l.geometry, predicate="dwithin", distance=tol
     )
+
+    # exclude buses at line endpoints, so only lines with actual overpassing buses enter the loop
+    line_boundaries = df_l.geometry.boundary
+    overpassing = (
+        df_p.geometry.iloc[point_positions]
+        .distance(line_boundaries.iloc[line_positions], align=False)
+        .to_numpy()
+        > tol
+    )
+    line_positions = line_positions[overpassing]
+    point_positions = point_positions[overpassing]
 
     # create dataframe with the joined data (line_id and bus_id)
     joined = pd.DataFrame(
@@ -614,16 +626,8 @@ def fix_overpassing_lines(lines, buses, distance_crs, tol=1):
         # get the indices of the points that intersect with the line
         points_indexes = group[bus_id_str].tolist()
 
-        # get the geometries of the points that intersect with the line
-        all_points = df_p.loc[points_indexes, "geometry"]
-
-        # discard points related to the extrema points (the buses) of each line
-        distance_from_buses = all_points.distance(line_geom.boundary)
-        overpassing_points = list(all_points[distance_from_buses > tol])
-
-        # if no overpassing points are identified, skip iteration
-        if len(overpassing_points) == 0:
-            continue
+        # get the geometries of the overpassing points
+        overpassing_points = list(df_p.loc[points_indexes, "geometry"])
 
         # find all the nearest points on the line to the points that intersect with the line
         nearest_points_list = [

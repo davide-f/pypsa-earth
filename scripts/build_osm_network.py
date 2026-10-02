@@ -549,7 +549,7 @@ def merge_stations_lines_by_station_id_and_voltage(
     return lines, buses
 
 
-def fix_overpassing_lines(lines, buses, distance_crs, tol=1):
+def fix_overpassing_lines(lines, buses, distance_crs, tol=1, show_progress=False):
     """
     Snap buses to lines that are within a certain tolerance. It uses a spatial
     index to find buses within the tolerance of each line. For each group of
@@ -570,6 +570,8 @@ def fix_overpassing_lines(lines, buses, distance_crs, tol=1):
         Coordinate reference system to use for distance calculations
     tol : float
         Tolerance in meters to snap the buses to the lines
+    show_progress : bool
+        Show progress while splitting lines
 
     Returns
     -------
@@ -620,7 +622,12 @@ def fix_overpassing_lines(lines, buses, distance_crs, tol=1):
     group_lines = joined.groupby(level=0)
 
     # iterate over the groups, TODO: change to apply
-    for i, group in group_lines:
+    for i, group in tqdm(
+        group_lines,
+        total=group_lines.ngroups,
+        desc="Splitting overpassing lines",
+        disable=not show_progress,
+    ):
         line_geom = df_l.loc[i, "geometry"]
 
         # get the indices of the points that intersect with the line
@@ -775,6 +782,7 @@ def built_network(
     geo_crs,
     distance_crs,
     force_ac=False,
+    show_progress=False,
 ):
     logger.info("Stage 1/5: Read input data")
     osm_clean_columns = read_osm_config("osm_clean_columns")
@@ -805,7 +813,13 @@ def built_network(
         tol = build_osm_network_config.get("overpassing_lines_tolerance", 1)
         logger.info("Stage 3/5: Avoid nodes overpassing lines: enabled with tolerance")
 
-        lines, buses = fix_overpassing_lines(lines, buses, distance_crs, tol=tol)
+        lines, buses = fix_overpassing_lines(
+            lines,
+            buses,
+            distance_crs,
+            tol=tol,
+            show_progress=show_progress,
+        )
     else:
         logger.info("Stage 3/5: Avoid nodes overpassing lines: disabled")
 
@@ -871,6 +885,7 @@ if __name__ == "__main__":
     geo_crs = snakemake.params.crs["geo_crs"]
     distance_crs = snakemake.params.crs["distance_crs"]
     force_ac = snakemake.params.build_osm_network.get("force_ac", False)
+    show_progress = snakemake.config["enable"]["progress_bar"]
     build_osm_network = snakemake.params.build_osm_network
     countries = snakemake.params.countries
 
@@ -882,4 +897,5 @@ if __name__ == "__main__":
         geo_crs,
         distance_crs,
         force_ac=force_ac,
+        show_progress=show_progress,
     )

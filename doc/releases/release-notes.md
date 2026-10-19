@@ -18,7 +18,13 @@ This part of documentation collects descriptive release notes to capture the mai
 
 **Minor Changes and bug-fixing**
 
-* Update backward compatibility notes [PR #264](https://github.com/pypsa-meets-earth/pypsa-earth/pull/264)
+* Fix H2 export bus coordinates, which were stored in metres instead of lon/lat
+
+* Update backward compatibility notes [PR #2064](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2064)
+
+* Avoid try/catch in rule definition, clean snakefile, and bugfix branch usage retrieve_databundle_data [PR #2067](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2067)
+
+* Keep one copy of OSM elements that appear in more than one country extract, so that cross-border lines, cables and HVDC links are no longer counted once per extract [PR #2076](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2076)
 
 # PyPSA-Earth 0.10.0
 
@@ -28,7 +34,13 @@ This part of documentation collects descriptive release notes to capture the mai
 
 * Add a command line interface (CLI) to help beginners to PyPSA-Earth to navigate through the model [PR #1959](https://github.com/pypsa-meets-earth/pypsa-earth/pull/1959)
 
-* Support country-specific mappings and custom transmission line types [PR # 1933](https://github.com/pypsa-meets-earth/pypsa-earth/pull/1933)
+* Support country-specific mappings and custom transmission line types [PR #1933](https://github.com/pypsa-meets-earth/pypsa-earth/pull/1933)
+
+* Enable support of PyPSA 1+ and improve environment [PR #1676](https://github.com/pypsa-meets-earth/pypsa-earth/pull/1676)
+
+* Enable support of Snakemake 8+ [PR #2032](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2032)
+
+* Migrate workflow scripts to pandas 3 [PR #2058](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2058)
 
 **Minor Changes and bug-fixing**
 
@@ -49,6 +61,8 @@ This part of documentation collects descriptive release notes to capture the mai
 * Fix fallback to closest available CO2 emission year [PR #2018](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2018)
 
 * Update guidance on creating a new release [PR #2002](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2002)
+
+* preserve power plant specific efficiencies instead of overwriting these with technology data default values from the cost table in `add_electricity.py` (applicable for custom_powerplants.csv and power plants from powerplantmatching) [PR #2057](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2057)
 
 * Fix capacity_factor=False in hydro calculation to support atlite 0.6.0 [PR #2023](https://github.com/pypsa-meets-earth/pypsa-earth/pull/2023)
 

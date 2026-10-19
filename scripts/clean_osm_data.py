@@ -146,6 +146,39 @@ def add_line_endings_tosubstations(substations, lines):
     return buses
 
 
+def drop_duplicate_osm_elements(df: pd.DataFrame, asset_name: str) -> pd.DataFrame:
+    """
+    Drop duplicated ids by type (way, node, etc.) in OSM entries.
+
+    Keep one copy of each OSM element found in more than one country extract.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw OSM data as downloaded by earth-osm
+    asset_name : str
+        Name of the asset, used for logging; e.g. "lines"
+
+    Returns
+    -------
+    pd.DataFrame
+        OSM data with one row per element
+    """
+    if df.empty:
+        return df
+
+    is_duplicate = df.duplicated(subset=["id", "Type"], keep="first")
+
+    if is_duplicate.any():
+        logger.info(
+            f"Dropping {is_duplicate.sum()} raw OSM {asset_name} that repeat "
+            "an element already read from another country extract"
+        )
+        df = df[~is_duplicate].reset_index(drop=True)
+
+    return df
+
+
 def set_unique_id(df, col):
     """
     Create unique id's, where id is specified by the column "col" The steps
@@ -356,7 +389,10 @@ def clean_frequency(df, default_frequency="50"):
 
     # TODO: default frequency may be by country
     df["tag_frequency"] = (
-        df["tag_frequency"].fillna(default_frequency).astype(str).replace(repl_freq)
+        df["tag_frequency"]
+        .astype(str)
+        .fillna(str(default_frequency))
+        .replace(repl_freq)
     )
 
     return df
@@ -424,7 +460,7 @@ def clean_circuits(df):
 
     # Convert numbers in different dtypes to string while preserving NaN or other strings.
     is_numeric = ~pd.to_numeric(df["circuits"], errors="coerce").isna()
-    df["circuits"] = df["circuits"].mask(is_numeric, df["circuits"].astype(str))
+    df["circuits"] = df["circuits"].astype(str)
 
     # Report non-numeric and non-NaN values, which should be added to repl_circuits.
     if df.loc[~is_numeric, "circuits"].notna().any():
@@ -471,7 +507,7 @@ def clean_cables(df):
 
     # Convert numbers in different dtypes to string while preserving NaN or other strings.
     is_numeric = ~pd.to_numeric(df["cables"], errors="coerce").isna()
-    df["cables"] = df["cables"].mask(is_numeric, df["cables"].astype(str))
+    df["cables"] = df["cables"].astype(str)
 
     # Report non-numeric and non-NaN values, which should be added to repl_cables.
     if df.loc[~is_numeric, "cables"].notna().any():
@@ -796,7 +832,7 @@ def prepare_generators_df(df_all_generators):
     # convert electricity column from string to float value
     # TODO: this filtering can be improved
     df_all_generators = df_all_generators[
-        df_all_generators["power_output_MW"].astype(str).str.contains("MW")
+        df_all_generators["power_output_MW"].astype(str).str.contains("MW", na=False)
     ]
     df_all_generators["power_output_MW"] = (
         df_all_generators["power_output_MW"]
@@ -906,7 +942,9 @@ def load_network_data(network_asset, data_options):
         loaded_df = gpd.read_file(custom_path)
 
     elif cleaning_data_options == "add_custom":
-        loaded_df1 = gpd.read_file(input_files[network_asset])
+        loaded_df1 = drop_duplicate_osm_elements(
+            gpd.read_file(input_files[network_asset]), network_asset
+        )
         loaded_df2 = gpd.read_file(custom_path)
         loaded_df = pd.concat([loaded_df1, loaded_df2], ignore_index=True)
 
@@ -921,7 +959,9 @@ def load_network_data(network_asset, data_options):
                 + "Default OSM_only option used. Options available in clean_OSM_data_options configtable"
             )
 
-        loaded_df = gpd.read_file(input_files[network_asset])
+        loaded_df = drop_duplicate_osm_elements(
+            gpd.read_file(input_files[network_asset]), network_asset
+        )
 
     # returns dataframe to be read in each section of the code depending on the component type (lines, substations or cables)
     return loaded_df
@@ -1069,7 +1109,9 @@ def clean_data(
     logger.info("Process OSM generators")
 
     if os.path.getsize(input_files["generators"]) > 0:
-        df_all_generators = gpd.read_file(input_files["generators"])
+        df_all_generators = drop_duplicate_osm_elements(
+            gpd.read_file(input_files["generators"]), "generators"
+        )
 
         # prepare the generator dataset
         df_all_generators = prepare_generators_df(df_all_generators)

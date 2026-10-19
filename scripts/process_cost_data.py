@@ -42,6 +42,7 @@ Relevant Settings
     Documentation of the configuration file ``config.yaml`` at :ref:`costs_cf`,
     :ref:`electricity_cf`
 """
+
 import logging
 
 import pandas as pd
@@ -291,6 +292,7 @@ def apply_currency_conversion(
             return pd.Series([value, unit])
 
     cost_dataframe[["value", "unit"]] = cost_dataframe.apply(convert_row, axis=1)
+    cost_dataframe["value"] = pd.to_numeric(cost_dataframe["value"]).astype(float)
     return cost_dataframe
 
 

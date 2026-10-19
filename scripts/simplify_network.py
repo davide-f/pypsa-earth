@@ -79,6 +79,7 @@ The rule :mod:`simplify_network` does up to four things:
 
 4. Optionally, if an integer were provided for the wildcard ``{simpl}`` (e.g. ``networks/elec_s500.nc``), the network is clustered to this number of clusters with the routines from the ``cluster_network`` rule with the function ``cluster_network.cluster(...)``. This step is usually skipped!
 """
+
 import sys
 from functools import reduce
 
@@ -947,7 +948,10 @@ def merge_into_network(n, threshold, aggregation_strategies=dict()):
     gdf_map = (
         gdf_backbone_buses.query("country in @islands_bcountry")
         .groupby("country")
-        .apply(lambda d: gpd.sjoin_nearest(islands_bcountry[d["country"].values[0]], d))
+        .apply(
+            lambda d: gpd.sjoin_nearest(islands_bcountry[d.name], d),
+            include_groups=False,
+        )
     )
     nearest_bus_df = n.buses.loc[n.buses.index.isin(gdf_map.bus_id_right)]
 

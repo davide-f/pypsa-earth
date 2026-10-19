@@ -580,6 +580,8 @@ def fix_overpassing_lines(lines, buses, distance_crs, tol=1, show_progress=False
     if lines.empty:
         return lines, buses
 
+    from tqdm import tqdm
+
     df_l = lines.copy()  # can use lines directly without copying
     # drop all columns except id and geometry for buses
     df_p = buses.copy()

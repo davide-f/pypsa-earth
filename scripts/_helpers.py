@@ -947,6 +947,7 @@ def mock_snakemake(
     root_dir: str | Path | None = None,
     configfiles: str | None = None,
     submodule_dir: str | None = None,
+    config: dict | None = None,
     **wildcards,
 ):
     """
@@ -967,11 +968,16 @@ def mock_snakemake(
     submodule_dir: str, Path
         in case PyPSA-Earth is used as a submodule, submodule_dir is
         the path of pypsa-earth relative to the project directory.
+    config: dict, optional
+        Config overrides applied before parsing the Snakefile, including an
+        active workflow config when collecting statistics.
     **wildcards:
         keyword arguments fixing the wildcards. Only necessary if wildcards are
         needed.
     """
     import os
+
+    from copy import deepcopy
 
     import snakemake as sm
     from packaging import version
@@ -979,7 +985,7 @@ def mock_snakemake(
     from snakemake import __version__ as sm_version
     from snakemake.api import Workflow
     from snakemake.common import SNAKEFILE_CHOICES
-    from snakemake.logging import LoggerManager
+    from snakemake.logging import LoggerManager, logger as snakemake_logger
     from snakemake.script import Snakemake
     from snakemake.settings.types import (
         ConfigSettings,
@@ -1021,7 +1027,10 @@ def mock_snakemake(
             configfiles = [configfiles]
 
         resource_settings = ResourceSettings()
-        config_settings = ConfigSettings(configfiles=map(Path, configfiles))
+        config_settings = ConfigSettings(
+            configfiles=list(map(Path, configfiles)),
+            config=deepcopy(config) if config is not None else {},
+        )
         workflow_settings = WorkflowSettings()
         storage_settings = StorageSettings()
         dag_settings = DAGSettings(rerun_triggers=[])
@@ -1040,7 +1049,7 @@ def mock_snakemake(
         if version.parse(sm_version) >= version.parse("9.14.6"):
             output_settings = OutputSettings()
             workflow_kwargs["logger_manager"] = LoggerManager(
-                logger=logger, settings=output_settings
+                logger=snakemake_logger, settings=output_settings
             )
 
         workflow = Workflow(**workflow_kwargs)
@@ -1075,6 +1084,10 @@ def mock_snakemake(
             job.dag.workflow.config,
             job.rule.name,
             None,
+        )
+        # The script-facing Snakemake object does not expose the job benchmark.
+        snakemake.benchmark = (
+            os.path.abspath(job.benchmark) if job.benchmark is not None else None
         )
         # create log and output dir if not existent
         for path in list(snakemake.log) + list(snakemake.output):

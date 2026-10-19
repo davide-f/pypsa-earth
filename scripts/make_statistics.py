@@ -43,10 +43,17 @@ def _multi_index_scen(rulename, keys):
 
 
 def _mock_snakemake(rule, **kwargs):
+    if (
+        "config" not in kwargs
+        and "configfiles" not in kwargs
+        and "snakemake" in globals()
+    ):
+        # Reuse the active workflow config when running from Snakemake.
+        kwargs["config"] = snakemake.config
 
-    snakemake = mock_snakemake(rule, **kwargs)
+    snakemake_obj = mock_snakemake(rule, **kwargs)
 
-    return snakemake
+    return snakemake_obj
 
 
 def generate_scenario_by_country(
@@ -581,7 +588,7 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         from _helpers import mock_snakemake
 
-        snakemake = mock_snakemake("make_statistics")
+        snakemake = mock_snakemake("make_statistics", configfiles="/data02/fioriti/gitworld/pypsa-earth/configs/scenarios/config.PY.yaml")
 
     fp_stats = snakemake.output["stats"]
     scenario = snakemake.params.scenario

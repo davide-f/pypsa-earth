@@ -2441,7 +2441,7 @@ rule run_scenario:
         diff_config="configs/scenarios/config.{scenario_name}.yaml",
     output:
         touchfile=touch("results/{scenario_name}/scenario.done"),
-        copyconfig="results/{scenario_name}/config.yaml",
+        # copyconfig="results/{scenario_name}/config.yaml",
     threads: 1
     resources:
         mem_mb=5000,
@@ -2457,25 +2457,26 @@ rule run_scenario:
                 .get("run", {})
                 .get("base_config", "config.default.yaml")
             )
-            # Ensure the scenario name matches the name of the configuration
-        create_test_config(
-            input.diff_config,
-            {"run": {"name": wildcards.scenario_name}},
-            input.diff_config,
-        )
-        # merge the default config file with the difference
-        create_test_config(base_config_path, input.diff_config, "config.yaml")
+
+        #     # Ensure the scenario name matches the name of the configuration
+        # create_test_config(
+        #     input.diff_config,
+        #     {"run": {"name": wildcards.scenario_name}},
+        #     input.diff_config,
+        # )
+        # # merge the default config file with the difference
+        # create_test_config(base_config_path, input.diff_config, "config.yaml")
         run(
-            "snakemake -j all solve_all_networks --rerun-incomplete",
+            "snakemake -c all solve_all_networks --rerun-incomplete --configfile " + base_config_path + " " + input.diff_config,
             shell=True,
             check=not config["run"]["allow_scenario_failure"],
         )
         run(
-            "snakemake -j1 make_statistics --force",
+            "snakemake -c 1 make_statistics --force --configfile " + base_config_path + " " + input.diff_config,
             shell=True,
             check=not config["run"]["allow_scenario_failure"],
         )
-        copyfile("config.yaml", output.copyconfig)
+        # copyfile("config.yaml", output.copyconfig)
 
 
 rule run_all_scenarios:
@@ -2485,5 +2486,7 @@ rule run_all_scenarios:
             scenario_name=[
                 c.stem.replace("config.", "")
                 for c in Path("configs/scenarios").glob("config.*.yaml")
+                # only if the corresponding scenario.done file does not exist
+                if not Path(f"results/{c.stem.replace('config.', '')}/scenario.done").exists()
             ],
         ),

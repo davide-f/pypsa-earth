@@ -289,6 +289,7 @@ def _load_lines_from_osm(fp_osm_lines: str) -> pd.DataFrame:
                 line_id="str",
                 bus0="str",
                 bus1="str",
+                dc="bool",
                 underground="bool",
                 under_construction="bool",
                 voltage="float",

@@ -287,6 +287,71 @@ def read_demcast_load(
     return demcast_load
 
 
+def align_demand_profile(demand, snapshots, country, max_gap=3):
+    """Align country demand, collapsing identical duplicates and logging repairs.
+
+    Fill gaps of at most ``max_gap`` snapshots by time interpolation internally
+    and nearest values at endpoints; reject conflicts and larger gaps.
+    """
+    snapshots = pd.DatetimeIndex(snapshots)
+    if (
+        snapshots.empty
+        or snapshots.hasnans
+        or not snapshots.is_unique
+        or not snapshots.is_monotonic_increasing
+    ):
+        raise ValueError("Target demand snapshots must be nonempty, unique and sorted.")
+    if not isinstance(demand.index, pd.DatetimeIndex) or demand.index.hasnans:
+        raise ValueError(f"{country}: demand must have valid datetime timestamps.")
+    if demand.index.tz != snapshots.tz:
+        raise ValueError(f"{country}: demand and snapshot time zones do not match.")
+    if max_gap < 1:
+        raise ValueError("max_gap must be at least 1.")
+
+    demand = demand.loc[demand.index.isin(snapshots)]
+    duplicates = int(demand.index.duplicated().sum())
+    logger.info(
+        "%s demand audit: %d missing timestamps, %d duplicate records, %d null values.",
+        country,
+        len(snapshots.difference(demand.index)),
+        duplicates,
+        int(demand.isna().sum()),
+    )
+    if duplicates:
+        counts = demand.groupby(level=0).nunique(dropna=False)
+        conflicts = counts.index[counts > 1]
+        if len(conflicts):
+            raise ValueError(
+                f"{country}: conflicting demand values at duplicate timestamps "
+                f"{conflicts[:5].tolist()}. Resolve the source timestamps first."
+            )
+    demand = demand.loc[~demand.index.duplicated()].reindex(snapshots)
+    missing = demand.isna()
+    if missing.all():
+        raise ValueError(f"{country}: no valid demand values at target snapshots.")
+    longest_gap = missing.groupby(missing.ne(missing.shift()).cumsum()).sum().max()
+    if longest_gap > max_gap:
+        raise ValueError(
+            f"{country}: demand gap spans {longest_gap} consecutive snapshots "
+            f"(maximum allowed: {max_gap}). Check source coverage."
+        )
+
+    interpolated = demand.interpolate(method="time", limit_area="inside")
+    result = interpolated.ffill().bfill()
+    if not np.isfinite(result).all():
+        raise ValueError(f"{country}: aligned demand contains invalid values.")
+    if duplicates or missing.any():
+        logger.warning(
+            "%s demand repair: %d duplicate records removed, %d values interpolated, "
+            "%d endpoint values filled using nearest demand.",
+            country,
+            duplicates,
+            int((missing & interpolated.notna()).sum()),
+            int(interpolated.isna().sum()),
+        )
+    return result
+
+
 def build_demand_profiles(
     n,
     load_source,
@@ -296,8 +361,6 @@ def build_demand_profiles(
     countries,
     scale,
     weather_year,
-    start_date,
-    end_date,
     out_path,
 ):
     """
@@ -306,6 +369,7 @@ def build_demand_profiles(
     Parameters
     ----------
     n : pypsa network
+        Provides the buses and target demand snapshots.
     load_source : str
         Type of data source to be used for electricity demand
     load_paths: paths of the load files
@@ -318,10 +382,6 @@ def build_demand_profiles(
         List of countries that is config input
     scale : float
         The scale factor is multiplied with the load (1.3 = 30% more load)
-    start_date: parameter
-        The start_date is the first hour of the first day of the snapshots
-    end_date: parameter
-        The end_date is the last hour of the last day of the snapshots
 
     Returns
     -------
@@ -376,6 +436,7 @@ def build_demand_profiles(
         Distributes load in country according to population and gdp.
         """
         l = el_load.loc[el_load.region_code == cntry]["Electricity demand"]
+        l = align_demand_profile(l, n.snapshots, cntry)
         if len(group) == 1:
             return pd.DataFrame({group.index[0]: l})
         else:
@@ -414,9 +475,9 @@ def build_demand_profiles(
         axis=1,
     )
 
-    start_date = pd.to_datetime(start_date)
-    end_date = pd.to_datetime(end_date) - pd.Timedelta(hours=1)
-    demand_profiles = demand_profiles.loc[start_date:end_date]
+    demand_profiles = demand_profiles.reindex(n.snapshots)
+    if not np.isfinite(demand_profiles.to_numpy()).all():
+        raise ValueError("Distributed demand profiles contain invalid values.")
     demand_profiles.to_csv(out_path, header=True)
 
     logger.info(f"Demand_profiles csv file created for the corresponding snapshots.")
@@ -438,8 +499,6 @@ if __name__ == "__main__":
     countries = snakemake.params.countries
     admin_shapes = snakemake.input.gadm_shapes
     scale = snakemake.params.load_options.get("scale", 1.0)
-    start_date = snakemake.params.snapshots["start"]
-    end_date = snakemake.params.snapshots["end"]
     out_path = snakemake.output[0]
 
     load_source = snakemake.params.load_options.get("source", "gegis")
@@ -459,7 +518,5 @@ if __name__ == "__main__":
         countries,
         scale,
         weather_year,
-        start_date,
-        end_date,
         out_path,
     )

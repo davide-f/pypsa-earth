@@ -18,6 +18,7 @@ from _helpers import (
     save_to_geojson,
     to_csv_nafix,
 )
+from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial import cKDTree
 from shapely.geometry import LineString, MultiLineString, Point
 from shapely.ops import linemerge, nearest_points, snap, split
@@ -87,31 +88,37 @@ def line_endings_to_bus_conversion(lines):
 
 
 def set_substations_ids(buses, distance_crs, tol=5000):
+    """Assign station IDs by complete linkage within proximity components.
+
+    Modify ``station_id`` in place; ``tol`` uses ``distance_crs`` units and
+    bounds pairwise distances between original bus locations in each cluster.
+    Complete linkage uses quadratic memory within each component.
     """
-    Assigns station IDs to buses based on their proximity.
+    if not np.isfinite(tol) or tol <= 0:
+        raise ValueError("tol must be finite and positive")
+    geometry = buses.geometry.to_crs(distance_crs)
+    coords = np.column_stack((geometry.x, geometry.y))
+    if not np.isfinite(coords).all():
+        raise ValueError("Bus coordinates must be finite")
+    # Cluster identical locations once; sorting also makes input order irrelevant.
+    coords, inverse = np.unique(coords, axis=0, return_inverse=True)
+    if len(coords) < 2:
+        buses["station_id"] = np.zeros(len(buses), dtype=int)
+        return
+    components = DBSCAN(eps=tol, min_samples=1).fit_predict(coords)
+    order = np.argsort(components, kind="stable")
+    groups = np.split(order, np.flatnonzero(np.diff(components[order])) + 1)
+    labels = np.empty(len(coords), dtype=int)
+    offset = 0
+    for indices in groups:
+        local = np.zeros(len(indices), dtype=int)
+        if len(indices) > 1:
+            tree = linkage(coords[indices], method="complete")
+            local = fcluster(tree, t=tol, criterion="distance") - 1
+        labels[indices] = local + offset
+        offset += int(local.max()) + 1
+    buses["station_id"] = labels[inverse]
 
-    Parameters:
-    - buses: GeoDataFrame object representing the buses data.
-    - distance_crs: Coordinate reference system (CRS) to convert the geometry to.
-    - tol: Tolerance distance in chosen CRS to define cluster proximity.
-
-    Returns:
-    - None. Modifies the 'station_id' column in the 'buses' GeoDataFrame.
-
-    Example:
-    set_substations_ids(buses_data, 'EPSG:3857', tol=5000)
-    """
-
-    # Convert the geometry to EPSG:3857
-    tmp_geometry = buses.geometry.to_crs(distance_crs)
-
-    coords = tmp_geometry.apply(lambda geom: np.array(geom.coords[0])).to_list()
-
-    # Perform DBSCAN on the coordinates
-    db = DBSCAN(eps=tol, min_samples=1).fit(coords)
-
-    # Add the cluster labels to the GeoDataFrame
-    buses["station_id"] = db.labels_
 
 
 def set_lines_ids(lines, buses, distance_crs):

@@ -793,6 +793,18 @@ def cluster(
     return clustering.n, clustering.busmap
 
 
+def _mean_load_by_bus(n):
+    """Return mean demand in MW per bus, including static load setpoints.
+
+    Load names need not match bus names, and several loads may share a bus after
+    aggregation. Use the explicit bus assignments and retain zero-demand buses.
+    Snapshot means are unweighted, matching the isolation thresholds.
+    """
+    mean_load = n.loads.p_set.copy()
+    mean_load.update(n.loads_t.p_set.mean())
+    return mean_load.groupby(n.loads.bus).sum().reindex(n.buses.index, fill_value=0.0)
+
+
 def drop_isolated_networks(n, threshold):
     """
     Find isolated subnetworks in the network and drop those of them which don't have
@@ -817,7 +829,7 @@ def drop_isolated_networks(n, threshold):
     load_mean_origin = n.loads_t.p_set.mean().mean()
 
     # duplicated sub-networks mean that there is at least one interconnection between buses
-    p_by_node = n.loads_t.p_set.mean().reindex(n.buses.index, fill_value=0.0)
+    p_by_node = _mean_load_by_bus(n)
     p_by_sub = p_by_node.groupby(p_by_node.index.map(n.buses.sub_network)).sum()
 
     small_subs = p_by_sub[p_by_sub < threshold].index
@@ -870,8 +882,8 @@ def transform_to_gdf(n, network_crs):
     buses_df = n.buses.copy()
     buses_df["bus_id"] = buses_df.index
 
-    # load data are crucial to deal with sub-networks
-    buses_df = buses_df.join(n.loads_t.p_set.sum().T.rename("load"))
+    # Mean demand in MW; using means preserves the snapshot-sum load shares.
+    buses_df["load"] = _mean_load_by_bus(n)
     buses_df["load_in_subnetw"] = buses_df.groupby(["country", "sub_network"])[
         "load"
     ].transform("sum")
@@ -1025,7 +1037,7 @@ def merge_isolated_networks(n, threshold, aggregation_strategies=dict()):
 
     n.determine_network_topology()
 
-    p_by_node = n.loads_t.p_set.mean().reindex(n.buses.index, fill_value=0.0)
+    p_by_node = _mean_load_by_bus(n)
     p_by_sub = p_by_node.groupby(p_by_node.index.map(n.buses.sub_network)).sum()
 
     small_subs = p_by_sub[p_by_sub < threshold].index

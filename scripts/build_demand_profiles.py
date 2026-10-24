@@ -287,7 +287,7 @@ def read_demcast_load(
     return demcast_load
 
 
-def align_demand_profile(demand, snapshots, country, max_gap=3):
+def align_demand_profile(demand, snapshots, country, max_gap=48):
     """Align country demand, collapsing identical duplicates and logging repairs.
 
     Fill gaps of at most ``max_gap`` snapshots by time interpolation internally

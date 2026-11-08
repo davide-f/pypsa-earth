@@ -777,7 +777,9 @@ if __name__ == "__main__":
         excluder = atlite.ExclusionContainer(crs=area_crs, res=100)
 
         if check_flag(config, "natura"):
-            excluder.add_raster(paths.natura, nodata=0, allow_no_overlap=True)
+            excluder.add_raster(
+                paths.natura, codes=[1], nodata=0, allow_no_overlap=True
+            )
 
         if check_flag(config, "copernicus"):
             copernicus = config["copernicus"]

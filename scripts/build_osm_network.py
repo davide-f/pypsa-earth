@@ -477,27 +477,11 @@ def connect_stations_same_station_id(lines, buses):
 
 
 def set_lv_substations(buses):
-    """
-    Function to set what nodes are lv, thereby setting substation_lv The
-    current methodology is to set lv nodes to buses where multiple voltage
-    level are found, hence when the station_id is duplicated.
-    """
-    # initialize column substation_lv to true
-    buses["substation_lv"] = True
-
-    # For each station number with multiple buses make lowest voltage `substation_lv = TRUE`
-    bus_with_stations_duplicates = buses[
-        buses.station_id.duplicated(keep=False)
-    ].sort_values(by=["station_id", "voltage"])
-    lv_bus_at_station_duplicates = (
-        buses[buses.station_id.duplicated(keep=False)]
-        .sort_values(by=["station_id", "voltage"])
-        .drop_duplicates(subset=["station_id"])
-    )
-    # Set all buses with station duplicates "False"
-    buses.loc[bus_with_stations_duplicates.index, "substation_lv"] = False
-    # Set lv_buses with station duplicates "True"
-    buses.loc[lv_bus_at_station_duplicates.index, "substation_lv"] = True
+    """Flag the lowest-voltage AC bus at each station for demand and generation."""
+    buses["substation_lv"] = False
+    ac_buses = buses.loc[~buses["dc"]]
+    lv_buses = ac_buses.sort_values("voltage").drop_duplicates("station_id")
+    buses.loc[lv_buses.index, "substation_lv"] = True
 
     return buses
 

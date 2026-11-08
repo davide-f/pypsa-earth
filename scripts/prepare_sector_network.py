@@ -3845,8 +3845,10 @@ if __name__ == "__main__":
     ].index  # TODO if you take nodes from the index of buses of n it's more than pop_layout
     # clustering of regions must be double checked.. refer to regions onshore
 
-    # Add location. TODO: move it into pypsa-earth
-    n.buses.loc[:, "location"] = n.buses.index
+    # Preserve the shared AC/DC region assigned during clustering.
+    n.buses["location"] = n.buses.location.replace("", pd.NA).fillna(
+        n.buses.index.to_series()
+    )
 
     # Set carrier of AC loads
     existing_nodes = [node for node in acnodes if node in n.loads.index]

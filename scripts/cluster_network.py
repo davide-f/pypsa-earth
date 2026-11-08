@@ -143,6 +143,7 @@ from _helpers import (
 )
 from build_shapes import add_gdp_data, add_population_data
 from pypsa.clustering.spatial import (
+    aggregatebuses,
     aggregateoneport,
     busmap_by_greedy_modularity,
     busmap_by_hac,
@@ -374,9 +375,7 @@ def busmap_for_gadm_clusters(inputs, n, gadm_layer_id, geo_crs, country_list):
         gadm_clustering=True,
     )
 
-    buses["gadm_subnetwork"] = (
-        buses["gadm_{}".format(gadm_layer_id)] + "_" + buses["carrier"].astype(str)
-    )
+    buses["gadm_subnetwork"] = buses["gadm_{}".format(gadm_layer_id)] + "_AC"
     busmap = buses["gadm_subnetwork"]
 
     return busmap
@@ -395,6 +394,10 @@ def busmap_for_n_clusters(
     feature=None,
     **algorithm_kwds,
 ):
+    """Define regions using only AC buses and their attached assets."""
+    n = n[n.buses.carrier == "AC"]
+    if n_clusters == len(n.buses):
+        return n.buses.index.to_series()
     if algorithm == "kmeans":
         algorithm_kwds.setdefault("n_init", 1000)
         algorithm_kwds.setdefault("max_iter", 30000)
@@ -517,6 +520,108 @@ def busmap_for_n_clusters(
     )
 
 
+def busmap_for_dc(n, regions, shapes, collapse_dc=False, distance_crs="EPSG:3857"):
+    """Assign DC by AC region polygons and drop regional DC islands.
+
+    Use the nearest polygon in the same country; warn for positive distances.
+    Missing or ambiguous matches and cross-region converters are errors.
+    Connectivity is checked after merging, including links, before collapsing DC.
+    Store the geographic map in ``location`` independently of the electrical map.
+    """
+    regions = regions.reindex(n.buses.index).copy()
+    ac = n.buses.carrier.eq("AC")
+    dc = n.buses.loc[~ac]
+    if not dc.empty:
+        shapes = shapes.assign(region=shapes["name"].astype(str).map(regions.loc[ac]))
+        shapes = (
+            shapes.dropna(subset=["region"])
+            .dissolve(by=["region", "country"])
+            .reset_index()
+        )
+        points = gpd.GeoDataFrame(
+            dc[["country"]], geometry=gpd.points_from_xy(dc.x, dc.y), crs=shapes.crs
+        )
+        shapes = shapes.to_crs(distance_crs)
+        matches = pd.concat(
+            [
+                gpd.sjoin_nearest(
+                    group,
+                    shapes.loc[shapes.country.eq(country), ["region", "geometry"]],
+                    how="left",
+                    distance_col="distance_m",
+                )
+                for country, group in points.to_crs(distance_crs).groupby("country")
+            ]
+        )
+        outside = matches.loc[matches.distance_m.gt(0), ["region", "distance_m"]]
+        if not outside.empty:
+            logger.warning(
+                "DC buses outside AC polygons assigned to the nearest region "
+                "(projected distances in metres):\n%s",
+                outside.to_string(),
+            )
+        counts = (
+            matches.groupby(level=0).region.nunique().reindex(dc.index, fill_value=0)
+        )
+        if counts.ne(1).any():
+            logger.warning(
+                "DC buses must have exactly one nearest AC region polygon; "
+                f"match counts: {counts.loc[counts.ne(1)].to_dict()}"
+            )
+        regions.loc[dc.index] = (
+            matches.groupby(level=0).region.first().reindex(dc.index)
+        )
+    if regions.isna().any() or not regions.isin(regions.loc[ac]).all():
+        raise ValueError("Every DC bus must belong to an existing AC region.")
+    regions = regions.astype(str)
+    # Simplification can leave DC transmission links with AC/DC endpoints too.
+    converters = n.links.loc[
+        n.links.carrier.isin(["B2B", ""])
+        & (n.links.bus0.map(ac) != n.links.bus1.map(ac))
+    ]
+    mismatch = converters.bus0.map(regions) != converters.bus1.map(regions)
+    if mismatch.any():
+        details = converters.loc[mismatch, ["bus0", "bus1"]].assign(
+            region0=converters.bus0.map(regions), region1=converters.bus1.map(regions)
+        )
+        raise ValueError(f"AC/DC converters must stay within one region:\n{details}")
+
+    n.buses["location"] = regions
+    busmap = regions.where(ac, regions + " DC")
+    branches = pd.concat([n.lines[["bus0", "bus1"]], n.links[["bus0", "bus1"]]])
+    branches = branches.apply(lambda buses: buses.map(busmap)).drop_duplicates()
+    connected = set(regions.loc[ac])
+    while True:
+        neighbours = branches.loc[branches.isin(connected).any(axis=1)]
+        reached = connected | set(neighbours.to_numpy().ravel())
+        if reached == connected:
+            break
+        connected = reached
+    isolated = busmap.index[~busmap.isin(connected)]
+    if len(isolated):
+        demand = n.loads.p_set.copy()
+        demand.update(n.loads_t.p_set.mean())
+        capacity = n.generators.loc[n.generators.bus.isin(isolated), "p_nom"].sum()
+        capacity += n.storage_units.loc[
+            n.storage_units.bus.isin(isolated), "p_nom"
+        ].sum()
+        logger.warning(
+            "Dropping isolated DC buses %s after regional merging, including %.2f MW "
+            "mean demand and %.2f MW generation/storage capacity.",
+            isolated.tolist(),
+            demand.loc[n.loads.bus.isin(isolated)].sum(),
+            capacity,
+        )
+        busmap = busmap.drop(isolated)
+    if collapse_dc:
+        if n.lines.carrier.eq("DC").any():
+            raise ValueError(
+                "collapse_dc requires HVDC represented as Links, not Lines."
+            )
+        busmap = regions.reindex(busmap.index)
+    return busmap.rename("busmap")
+
+
 def clustering_for_n_clusters(
     inputs,
     config,
@@ -537,9 +642,10 @@ def clustering_for_n_clusters(
     feature=None,
     extended_link_costs=0,
     focus_weights=None,
+    collapse_dc=False,
 ):
     line_strategies = aggregation_strategies.get("lines", dict())
-    bus_strategies = aggregation_strategies.get("buses", dict())
+    bus_strategies = dict(aggregation_strategies.get("buses", dict()), location="first")
     generator_strategies = aggregation_strategies.get("generators", dict())
     one_port_strategies = aggregation_strategies.get("one_ports", dict())
 
@@ -564,6 +670,33 @@ def clustering_for_n_clusters(
     else:
         busmap = custom_busmap
 
+    shapes = None
+    if n.buses.carrier.eq("DC").any():
+        shapes = pd.concat(
+            [
+                gpd.read_file(getattr(inputs, name)).to_crs(geo_crs)
+                for name in ("regions_onshore", "regions_offshore")
+            ],
+            ignore_index=True,
+        )
+    busmap = busmap_for_dc(
+        n,
+        busmap,
+        shapes,
+        collapse_dc,
+        distance_crs=config.get("crs", {}).get("distance_crs", "EPSG:3857"),
+    )
+    n = n[busmap.index]  # Also remove assets and branches belonging to dropped buses.
+    if collapse_dc:
+        # Preserve AC bus attributes while redirecting the DC assets.
+        ac_buses = aggregatebuses(
+            n, busmap.loc[n.buses.carrier.eq("AC")], custom_strategies=bus_strategies
+        )
+        for attribute in ac_buses:
+            bus_strategies[attribute] = lambda values, attribute=attribute: ac_buses.at[
+                busmap.at[values.index[0]], attribute
+            ]
+
     clustering = get_clustering_from_busmap(
         n,
         busmap,
@@ -580,9 +713,13 @@ def clustering_for_n_clusters(
 
     if not n.links.empty:
         nc = clustering.n
-        nc.links["underwater_fraction"] = (
-            n.links.eval("underwater_fraction * length").div(nc.links.length).dropna()
-        )
+        if "underwater_fraction" in n.links:
+            nc.links["underwater_fraction"] = (
+                n.links.eval("underwater_fraction * length")
+                .div(nc.links.length.replace(0, np.nan))
+                .reindex(nc.links.index)
+                .fillna(0)
+            )
         nc.links["capital_cost"] = nc.links["capital_cost"].add(
             (nc.links.length - n.links.length)
             .clip(lower=0)
@@ -738,15 +875,16 @@ if __name__ == "__main__":
         n = nearest_shape(n, subregion_shapes, crs, tolerance=tolerance)
 
     n.determine_network_topology()
+    ac_buses = n.buses.loc[n.buses.carrier == "AC"]
     if snakemake.wildcards.clusters.endswith("m"):
         n_clusters = int(snakemake.wildcards.clusters[:-1])
         aggregate_carriers = snakemake.params.electricity.get("conventional_carriers")
     elif snakemake.wildcards.clusters.endswith("flex"):
-        n_clusters = min(len(n.buses), int(snakemake.wildcards.clusters[:-4]))
+        n_clusters = min(len(ac_buses), int(snakemake.wildcards.clusters[:-4]))
     elif snakemake.wildcards.clusters == "all":
-        n_clusters = len(n.buses)
+        n_clusters = len(ac_buses)
     elif snakemake.wildcards.clusters == "min":
-        n_clusters = n.buses.groupby(["country", "sub_network"]).ngroups
+        n_clusters = ac_buses.groupby(["country", "sub_network"]).ngroups
     else:
         n_clusters = int(snakemake.wildcards.clusters)
         aggregate_carriers = None
@@ -755,12 +893,13 @@ if __name__ == "__main__":
 
     if n_clusters == len(n.buses) and not alternative_clustering:
         # Fast-path if no clustering is necessary
+        n.buses["location"] = n.buses.index
         busmap = n.buses.index.to_series()
         linemap = n.lines.index.to_series()
         clustering = pypsa.clustering.spatial.Clustering(n, busmap, linemap)
-    elif len(n.buses) < n_clusters:
-        logger.error(
-            f"Desired number of clusters ({n_clusters}) higher than the number of buses ({len(n.buses)})"
+    elif len(ac_buses) < n_clusters and not alternative_clustering:
+        raise ValueError(
+            f"Desired number of regions ({n_clusters}) exceeds the number of AC buses ({len(ac_buses)})."
         )
     else:
         line_length_factor = snakemake.params.length_factor
@@ -825,6 +964,7 @@ if __name__ == "__main__":
             cluster_config.get("feature", "solar+onwind-time"),
             extended_link_costs=hvac_overhead_cost,
             focus_weights=focus_weights,
+            collapse_dc=cluster_config.get("collapse_dc", False),
         )
 
     nc = clustering.n
@@ -882,4 +1022,6 @@ if __name__ == "__main__":
     ):  # also available: linemap_positive, linemap_negative
         getattr(clustering, attr).to_csv(outputs[attr])
 
-    cluster_regions((clustering.busmap,), inputs, outputs)
+    cluster_regions(
+        (n.buses.loc[n.buses.carrier.eq("AC"), "location"],), inputs, outputs
+    )

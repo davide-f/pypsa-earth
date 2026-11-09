@@ -106,7 +106,7 @@ world_iso:
     SS: "south-sudan"
     SD: "sudan"
     SL: "sierra leone"
-    SZ: "swaziland"
+    SZ: "eswatini"
     TZ: "tanzania"
     TG: "togo"
     TN: "tunisia"
@@ -166,16 +166,16 @@ world_iso:
     VN: "vietnam"
     YE: "yemen"
   Oceania:
-    AS: "american-samoa"  # Island
+    # AS: "american-samoa"  # Island
     AU: "australia"
     FJ: "fiji"
     KI: "kiribati"  # Island
     MH: "marshall-islands"
     FM: "micronesia"
     NR: "nauru"
-    NC: "new-caledonia"  # Island
+    # NC: "new-caledonia"  # Island
     NZ: "new-zealand"
-    NU: "niue"  # Island
+    # NU: "niue"  # Island
     PG: "papua-new-guinea"
     PW: "palau"
     WS: "samoa"
@@ -202,7 +202,7 @@ world_iso:
     GR: "greece"
     HU: "hungary"
     IS: "iceland"
-    IE: "ireland-and-northern-ireland"
+    IE: "ireland"
     IT: "italy"
     XK: "kosovo"
     LV: "latvia"
@@ -262,7 +262,7 @@ world_iso:
     CL: "chile"
     CO: "colombia"
     EC: "ecuador"
-    FK: "falkland-islands"  # Islands
+    # FK: "falkland-islands"  # Islands
     GF: "french-guiana"
     GY: "guyana"  # No Data
     PE: "peru"
@@ -322,7 +322,7 @@ gegis_regions:
     SS: "south-sudan"
     SD: "sudan"
     SL: "sierra leone"
-    SZ: "swaziland"
+    SZ: "eswatini"
     TZ: "tanzania"
     TG: "togo"
     TN: "tunisia"
@@ -363,7 +363,7 @@ gegis_regions:
     NP: "nepal"
     OM: "oman"
     PK: "pakistan"
-    PS: "palestine"
+    # PS: "palestine"
     PH: "philippines"
     QA: "qatar"
     SA: "saudi-arabia"

@@ -847,9 +847,8 @@ def attach_conventional_generators(
                 # First map generator buses to countries; then map countries to p_max_pu
                 values = read_csv_nafix(values, index_col=0).iloc[:, 0]
                 bus_values = n.buses.country.map(values)
-                n.generators[attr].update(
-                    n.generators.loc[idx].bus.map(bus_values).dropna()
-                )
+                updates = n.generators.loc[idx, "bus"].map(bus_values).dropna()
+                n.generators.loc[updates.index, attr] = updates
             else:
                 # Single value affecting all generators of technology k indiscriminantely of country
                 n.generators.loc[idx, attr] = values
@@ -1070,9 +1069,10 @@ def attach_hydro(
         )
 
     if "PHS" in carriers and not phs.empty:
-        # fill missing max hours to config value and
+        # fill missing max hours (0 or NaN) to config value and
         # assume no natural inflow due to lack of data
-        phs = phs.replace({"max_hours": {0: c["PHS_max_hours"]}})
+        max_hours = c["PHS_max_hours"]
+        phs = phs.replace({"max_hours": {0: max_hours, np.nan: max_hours}})
         n.add(
             "StorageUnit",
             phs.index,

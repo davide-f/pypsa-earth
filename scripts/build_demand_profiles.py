@@ -7,17 +7,42 @@
 """
 Creates electric demand profile csv.
 
+Experimental copy with demand filling; current rules use the original.
+To integrate later, change both the Snakefile import of get_load_paths_gegis
+and the rule script path to this module, so reference-country files become
+explicit input dependencies. DemandCast already downloads a global file.
+
+Example configuration (totals from the archived NG run's 37 GADM shapes)::
+
+    load_options:
+      fill_missing:
+        base_country: "NG"
+        gdp: 1194938546688.0
+        pop: 206119089.90968263
+
+GDP and population must use the same datasets and units as the target shapes.
+The fill_missing mapping is required. A country with no non-null demand at
+the target snapshots uses the reference profile scaled by the weighted GDP and
+population ratios. With the default weights, the multiplier is
+0.6 * target_gdp / reference_gdp + 0.4 * target_pop / reference_pop.
+Target totals sum the administrative shapes for each country. Bus allocation
+and load scaling also apply to the synthesized profile. Timestamp alignment
+and gap repair take place later in upsample().
+
 Relevant Settings
 -----------------
 
 .. code:: yaml
 
-    load:
+    load_options:
+        source:
         scale:
-        ssp:
         weather_year:
         prediction_year:
-        region_load:
+        fill_missing:
+            base_country:
+            gdp:
+            pop:
 
 Inputs
 ------
@@ -35,10 +60,12 @@ Outputs
 Description
 -----------
 
-The rule :mod:`build_demand` creates load demand profiles in correspondence of the buses of the network.
-It creates the load paths for GEGIS outputs by combining the input parameters of the countries, weather year, prediction year, and SSP scenario.
-Then with a function that takes in the PyPSA network "base.nc", region and gadm shape data, the countries of interest, a scale factor, and the snapshots,
-it returns a csv file called "demand_profiles.csv", that allocates the load to the buses of the network according to GDP and population.
+The rule :mod:`build_demand_profiles` creates electricity demand profiles for
+network buses. Demand is read from GEGIS or DemandCast for the selected
+countries and the reference country. Missing country profiles are synthesized
+from the reference profile using country GDP and population totals. The load
+scale is then applied, and country demand is aligned to network snapshots and
+allocated to bus regions using GDP and population weights.
 """
 
 import os
@@ -66,6 +93,9 @@ from shapely.validation import make_valid
 logger = create_logger(__name__)
 
 
+# Default weights for country demand filling and allocation to bus regions.
+WEIGHTS = {"gdp": 0.6, "pop": 0.4}
+
 def normed(s):
     if s.sum() == 0:
         return s
@@ -74,17 +104,17 @@ def normed(s):
 
 def get_gegis_regions(countries):
     """
-    Get the GEGIS region from the config file.
+    Find the configured GEGIS regions covering the requested countries.
 
     Parameters
     ----------
-    region : str
-        The region of the bus
+    countries : list[str]
+        Country codes for which demand data is required.
 
     Returns
     -------
-    str
-        The GEGIS region
+    list[str]
+        Matching GEGIS region names, without duplicates.
     """
     gegis_dict, world_iso = read_osm_config("gegis_regions", "world_iso")
 
@@ -101,18 +131,25 @@ def get_gegis_regions(countries):
     return regions
 
 
+def get_load_countries(countries, fill_missing=None):
+    """Include the reference country without changing the modeled countries."""
+    return list(countries) + [fill_missing["base_country"]]
+
+
 def get_load_paths_gegis(ssp_parentfolder, config):
     """
     Create load paths for GEGIS outputs.
 
-    The paths are created automatically according to included country,
-    weather year, prediction year and ssp scenario
+    Paths cover the selected countries and the reference country, using the
+    configured weather year and prediction year with the legacy SSP2-2.6 scenario.
 
     Example
     -------
     ["/data/ssp2-2.6/2030/era5_2013/Africa.nc", "/data/ssp2-2.6/2030/era5_2013/Africa.nc"]
     """
-    countries = config.get("countries")
+    countries = get_load_countries(
+        config.get("countries"), config["load_options"]["fill_missing"]
+    )
     region_load = get_gegis_regions(countries)
     weather_year = config.get("load_options")["weather_year"]
     prediction_year = config.get("load_options")["prediction_year"]
@@ -352,6 +389,98 @@ def align_demand_profile(demand, snapshots, country, max_gap=48):
     return result
 
 
+def fill_missing_demand(
+    el_load, countries, shapes, missing_opts, snapshots, *, weights=WEIGHTS
+):
+    """
+    Fill countries with no non-null demand at the target snapshots.
+
+    Reference timestamps and missing values are preserved for alignment during
+    bus allocation. Profiles with a non-null value at a target snapshot are kept.
+
+    Parameters
+    ----------
+    el_load : pd.DataFrame
+        Electricity load with ``time`` index, and containing the columns
+        ``region_code``, ``region_name``, and ``Electricity demand``.
+    countries : list
+        List of countries that is config input.
+    shapes : gpd.GeoDataFrame
+        Contains subregional gdp, population and shape data.
+    missing_opts : dict
+        Reference base_country and its positive gdp/pop totals, in the same
+        units as the administrative shape data.
+    snapshots : pd.DatetimeIndex
+        Target network snapshots used to check country demand availability.
+    weights : dict, optional
+        Relative weights for scaling demand between countries. Expected keys
+        are ``"gdp"`` and ``"pop"``, with non-negative values summing to 1.
+
+    Returns
+    -------
+    pd.DataFrame
+        Input demand plus synthesized country profiles, before load scaling
+        and timestamp alignment.
+    """
+    available = set(
+        el_load.loc[el_load.index.isin(snapshots)]
+        .dropna(subset=["Electricity demand"])
+        .region_code
+    )
+    missing = [country for country in countries if country not in available]
+    if not missing:
+        return el_load
+
+    reference = missing_opts["base_country"]
+    if any(
+        not isinstance(value, (int, float)) or not np.isfinite(value) or value <= 0
+        for value in [missing_opts["gdp"], missing_opts["pop"]]
+    ):
+        raise ValueError("fill_missing.gdp and pop must be positive reference totals.")
+    if reference not in available:
+        raise ValueError(f"{reference}: no reference demand at target snapshots.")
+    
+    base = el_load.loc[el_load.region_code == reference, "Electricity demand"]
+    filled = []
+    for country in missing:
+        # Sum administrative GDP and population totals for the missing country.
+        country_shapes = shapes.loc[shapes.country == country]
+        missing_counts = country_shapes[["gdp", "pop"]].isna().sum()
+        if missing_counts.any():
+            logger.warning(
+                "%s: skipping %d missing GDP and %d missing population values "
+                "when summing country totals; demand may be underestimated.",
+                country,
+                missing_counts["gdp"],
+                missing_counts["pop"],
+            )
+        target_totals = country_shapes[["gdp", "pop"]].sum(axis=0)
+        if not np.isfinite(target_totals.values).all() or (target_totals <= 0).any():
+            raise ValueError(f"{country}: demand filling needs positive GDP/population.")
+        # Weight the target-to-reference ratios using the supplied weights.
+        factor = sum(
+            target_totals[key] / missing_opts[key] * weight
+            for key, weight in weights.items()
+        )
+        filled.append(
+            pd.DataFrame(
+                {
+                    "region_code": country,
+                    "region_name": country,
+                    "Electricity demand": base * factor,
+                },
+                index=base.index,
+            )
+        )
+        logger.warning(
+            "Filling %s demand from %s with GDP/population multiplier %.6g.",
+            country,
+            reference,
+            factor,
+        )
+    return pd.concat([el_load.loc[~el_load.region_code.isin(missing)], *filled])
+
+
 def build_demand_profiles(
     n,
     load_source,
@@ -362,6 +491,8 @@ def build_demand_profiles(
     scale,
     weather_year,
     out_path,
+    fill_missing,
+    weights=WEIGHTS,
 ):
     """
     Create csv file of electric demand time series.
@@ -380,18 +511,31 @@ def build_demand_profiles(
         contains subregional gdp, population and shape data
     countries : list
         List of countries that is config input
-    scale : float
-        The scale factor is multiplied with the load (1.3 = 30% more load)
+    scale : float or dict
+        Demand multiplier, or country-specific multipliers with an optional
+        DEFAULT value (1.3 = 30% more load).
+    weather_year : int
+        Weather year selected from the DemandCast dataset.
+    out_path : str
+        Destination CSV path.
+    fill_missing : dict
+        Reference base_country and its positive gdp/pop totals, in the same
+        units as the administrative shape data.
+
+    weights : dict, optional
+        GDP and population weights used for allocation to bus regions.
 
     Returns
     -------
-    demand_profiles.csv : csv file containing the electric demand time series
+    None
+        Writes the bus demand time series to out_path.
     """
     substation_lv_i = n.buses.index[n.buses["substation_lv"]]
     regions = gpd.read_file(regions).set_index("name").reindex(substation_lv_i)
 
+    load_countries = get_load_countries(countries, fill_missing)
     if (load_source == "gegis") or (load_source == "ssp"):
-        gegis_load = compose_gegis_load(load_paths=load_paths, countries=countries)
+        gegis_load = compose_gegis_load(load_paths=load_paths, countries=load_countries)
         el_load = gegis_load
     else:
         if not os.path.exists(load_paths):
@@ -406,12 +550,19 @@ def build_demand_profiles(
         demcast_load = read_demcast_load(
             load_paths=load_paths,
             weather_year=weather_year,
-            countries=countries,
+            countries=load_countries,
         )
         el_load = demcast_load
 
+    shapes = gpd.read_file(admin_shapes).set_index("GADM_ID")
+    shapes["geometry"] = shapes["geometry"].apply(lambda x: make_valid(x))
+
+    el_load = fill_missing_demand(
+        el_load, countries, shapes, fill_missing, n.snapshots, weights=weights
+    )
+
     # filter load for analysed countries
-    el_load = el_load.loc[el_load.region_code.isin(countries)]
+    el_load = el_load.loc[el_load.region_code.isin(countries)].copy()
 
     if isinstance(scale, dict):
         logger.info(f"Using custom scaling factor for load data.")
@@ -428,12 +579,9 @@ def build_demand_profiles(
         logger.info(f"Load data scaled with scaling factor {scale}.")
         el_load["Electricity demand"] *= scale
 
-    shapes = gpd.read_file(admin_shapes).set_index("GADM_ID")
-    shapes["geometry"] = shapes["geometry"].apply(lambda x: make_valid(x))
-
-    def upsample(cntry, group):
+    def upsample(cntry, group, *, weights=weights):
         """
-        Distributes load in country according to population and gdp.
+        Align country demand to snapshots and allocate it to bus regions.
         """
         l = el_load.loc[el_load.region_code == cntry]["Electricity demand"]
         l = align_demand_profile(l, n.snapshots, cntry)
@@ -449,11 +597,10 @@ def build_demand_profiles(
                 transfer.dot(shapes_cntry["pop"].fillna(1.0).values), index=group.index
             )
 
-            # relative factors 0.6 and 0.4 have been determined from a linear
-            # regression on the country to EU continent load data
-            # (refer to vresutils.load._upsampling_weights)
-            # TODO: require adjustment for Africa
-            factors = normed(0.6 * normed(gdp_n) + 0.4 * normed(pop_n))
+            # Default weights (0.6 GDP, 0.4 population) come from a regression
+            # on European country load data; see vresutils.load._upsampling_weights.
+            # TODO: assess whether these defaults need adjustment for Africa.
+            factors = normed(weights["gdp"] * normed(gdp_n) + weights["pop"] * normed(pop_n))
             if factors.sum() == 0:
                 logger.warning(
                     f"Upsampling factors for {cntry} are all zero, returning uniform distribution across {len(factors)} shapes."
@@ -503,6 +650,7 @@ if __name__ == "__main__":
 
     load_source = snakemake.params.load_options.get("source", "gegis")
     weather_year = snakemake.params.load_options["weather_year"]
+    fill_missing = snakemake.params.load_options["fill_missing"]
 
     if load_source == "ssp":
         logger.warning(
@@ -519,4 +667,5 @@ if __name__ == "__main__":
         scale,
         weather_year,
         out_path,
+        fill_missing=fill_missing,
     )

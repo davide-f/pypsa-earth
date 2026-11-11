@@ -192,6 +192,10 @@ load_options:
   weather_year: 2013 # Weather year of the load profile
   prediction_year: 2030 # Valid only if "gegis" used as a source
   scale: 1 # scales all load time-series, i.e. 2 = doubles load
+  fill_missing: # when data for a country is missing, the load is filled with data from base_country, scaled by gdp and pop
+    base_country: "NG"
+    gdp: 1194938546688.0  # obtained from a run of the workflow using NG
+    pop: 206119089.90968263  # obtained from a run of the workflow using NG
 
 # ------------------- Electricity grid -------------------
 electricity:

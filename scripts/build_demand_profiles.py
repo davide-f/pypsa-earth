@@ -460,7 +460,7 @@ def fill_missing_demand(
                 missing_counts["pop"],
             )
         target_totals = country_shapes[["gdp", "pop"]].sum(axis=0)
-        if not np.isfinite(target_totals.values).all() or (target_totals <= 0).any():
+        if not np.isfinite(target_totals.values).all() or (target_totals < 0).any():
             raise ValueError(f"{country}: demand filling needs positive GDP/population.")
         # Weight the target-to-reference ratios using the supplied weights.
         factor = sum(

@@ -534,6 +534,9 @@ def _set_electrical_parameters_ac_lines(
 
     lines["s_max_pu"] = lines_config["s_max_pu"]
 
+    # country column is no longer needed after line type assignment
+    lines.drop(columns=["country"], inplace=True)
+
     return lines
 
 
@@ -584,6 +587,9 @@ def _set_electrical_parameters_dc_lines(
     )
 
     lines["s_max_pu"] = lines_config["s_max_pu"]
+
+    # country column is no longer needed after line type assignment
+    lines.drop(columns=["country"], inplace=True)
 
     return lines
 

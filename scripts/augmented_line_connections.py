@@ -169,6 +169,7 @@ if __name__ == "__main__":
         ),
         axis=1,
     )
+    new_kedge_lines.drop(columns=["country"], inplace=True)
 
     new_long_lines["country"] = new_long_lines["bus0"].map(n.buses["country"])
     new_long_lines["v_nom"] = new_long_lines["bus0"].map(n.buses["v_nom"])
@@ -181,6 +182,7 @@ if __name__ == "__main__":
         ),
         axis=1,
     )
+    new_long_lines.drop(columns=["country"], inplace=True)
 
     if "HVDC" in list(line_type_option):
         n.add(

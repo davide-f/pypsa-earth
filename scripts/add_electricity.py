@@ -548,7 +548,7 @@ def attach_wind_and_solar(
 
     Existing capacities are taken from powerplants.csv and spatialized to buses.
     National capacity gaps with respect to IRENA targets are filled and
-    redistributed uniformly across buses within each country.
+    distributed in proportion to demand across buses within each country.
 
     Offshore wind is treated entirely as offwind-ac.
 
@@ -582,6 +582,13 @@ def attach_wind_and_solar(
 
     estimate_cfg = snakemake.params.electricity.get("estimate_renewable_capacities", {})
     countries = snakemake.params.countries
+    demand_by_bus = (
+        n.loads_t.p_set.mul(n.snapshot_weightings.generators, axis=0)
+        .sum()
+        .groupby(n.loads.bus)
+        .sum()
+        .clip(lower=0.0)
+    )
 
     for carrier in carriers:
         if carrier == "hydro":
@@ -692,8 +699,11 @@ def attach_wind_and_solar(
                             )
                             continue
 
-                        add_per_bus = gap / len(buses_c)
-                        caps_final.loc[buses_c] += add_per_bus
+                        demand_c = demand_by_bus.reindex(buses_c).fillna(0.0)
+                        if demand_c.sum() > 0:
+                            caps_final.loc[buses_c] += gap * demand_c / demand_c.sum()
+                        else:
+                            caps_final.loc[buses_c] += gap / len(buses_c)
 
                 existing_total = caps_existing.sum()
                 target_total = targets.sum()

@@ -551,7 +551,7 @@ if config["enable"].get("retrieve_cost_data", True):
         resources:
             mem_mb=5000,
         run:
-            move(input[0], output[0])
+            copyfile(input[0], output[0])
 
 
 rule process_cost_data:

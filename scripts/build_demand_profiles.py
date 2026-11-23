@@ -498,6 +498,7 @@ def build_demand_profiles(
     out_path,
     fill_missing,
     weights=WEIGHTS,
+    interpolate_gaps_duration=48,
 ):
     """
     Create csv file of electric demand time series.
@@ -589,7 +590,9 @@ def build_demand_profiles(
         Align country demand to snapshots and allocate it to bus regions.
         """
         l = el_load.loc[el_load.region_code == cntry]["Electricity demand"]
-        l = align_demand_profile(l, n.snapshots, cntry)
+        l = align_demand_profile(
+            l, n.snapshots, cntry, max_gap=interpolate_gaps_duration
+        )
         if len(group) == 1:
             return pd.DataFrame({group.index[0]: l})
         else:
@@ -656,6 +659,7 @@ if __name__ == "__main__":
     load_source = snakemake.params.load_options.get("source", "gegis")
     weather_year = snakemake.params.load_options["weather_year"]
     fill_missing = snakemake.params.load_options["fill_missing"]
+    interpolate_gaps_duration = snakemake.params.load_options["interpolate_gaps_duration"]
 
     if load_source == "ssp":
         logger.warning(
@@ -673,4 +677,5 @@ if __name__ == "__main__":
         weather_year,
         out_path,
         fill_missing=fill_missing,
+        interpolate_gaps_duration=interpolate_gaps_duration,
     )

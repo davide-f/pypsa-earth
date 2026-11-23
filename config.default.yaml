@@ -200,6 +200,7 @@ load_options:
     base_country: "NG"
     gdp: 1194938546688.0  # obtained from a run of the workflow using NG
     pop: 206119089.90968263  # obtained from a run of the workflow using NG
+    fill_long_gaps: true # replace whole country profiles with gaps exceeding interpolate_gaps_duration
 
 # ------------------- Electricity grid -------------------
 electricity:

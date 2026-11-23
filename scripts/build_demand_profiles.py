@@ -329,12 +329,8 @@ def read_demcast_load(
     return demcast_load
 
 
-def align_demand_profile(demand, snapshots, country, max_gap=48):
-    """Align country demand, collapsing identical duplicates and logging repairs.
-
-    Fill gaps of at most ``max_gap`` snapshots by time interpolation internally
-    and nearest values at endpoints; reject conflicts and larger gaps.
-    """
+def audit_demand_profile(demand, snapshots, country):
+    """Validate and align timestamps, returning demand, duplicates and longest gap."""
     snapshots = pd.DatetimeIndex(snapshots)
     if (
         snapshots.empty
@@ -347,9 +343,6 @@ def align_demand_profile(demand, snapshots, country, max_gap=48):
         raise ValueError(f"{country}: demand must have valid datetime timestamps.")
     if demand.index.tz != snapshots.tz:
         raise ValueError(f"{country}: demand and snapshot time zones do not match.")
-    if max_gap < 1:
-        raise ValueError("max_gap must be at least 1.")
-
     demand = demand.loc[demand.index.isin(snapshots)]
     duplicates = int(demand.index.duplicated().sum())
     logger.info(
@@ -369,9 +362,18 @@ def align_demand_profile(demand, snapshots, country, max_gap=48):
             )
     demand = demand.loc[~demand.index.duplicated()].reindex(snapshots)
     missing = demand.isna()
+    longest_gap = missing.groupby(missing.ne(missing.shift()).cumsum()).sum().max()
+    return demand, duplicates, longest_gap
+
+
+def align_demand_profile(demand, snapshots, country, max_gap=48):
+    """Repair gaps up to max_gap snapshots internally and at endpoints."""
+    if max_gap < 1:
+        raise ValueError("max_gap must be at least 1.")
+    demand, duplicates, longest_gap = audit_demand_profile(demand, snapshots, country)
+    missing = demand.isna()
     if missing.all():
         raise ValueError(f"{country}: no valid demand values at target snapshots.")
-    longest_gap = missing.groupby(missing.ne(missing.shift()).cumsum()).sum().max()
     if longest_gap > max_gap:
         raise ValueError(
             f"{country}: demand gap spans {longest_gap} consecutive snapshots "
@@ -395,13 +397,14 @@ def align_demand_profile(demand, snapshots, country, max_gap=48):
 
 
 def fill_missing_demand(
-    el_load, countries, shapes, missing_opts, snapshots, *, weights=WEIGHTS
+    el_load, countries, shapes, missing_opts, snapshots, *, weights=WEIGHTS,
+    interpolate_gaps_duration=48,
 ):
     """
-    Fill countries with no non-null demand at the target snapshots.
+    Fill absent profiles and, by default, replace profiles with excessive gaps.
 
-    Reference timestamps and missing values are preserved for alignment during
-    bus allocation. Profiles with a non-null value at a target snapshot are kept.
+    fill_long_gaps replaces whole country profiles whose missing runs exceed
+    interpolate_gaps_duration snapshots, using the existing reference scaling.
 
     Parameters
     ----------
@@ -427,12 +430,20 @@ def fill_missing_demand(
         Input demand plus synthesized country profiles, before load scaling
         and timestamp alignment.
     """
-    available = set(
-        el_load.loc[el_load.index.isin(snapshots)]
-        .dropna(subset=["Electricity demand"])
-        .region_code
-    )
-    missing = [country for country in countries if country not in available]
+    missing = []
+    for country in countries:
+        profile = el_load.loc[el_load.region_code == country, "Electricity demand"]
+        aligned, _, longest_gap = audit_demand_profile(profile, snapshots, country)
+        if aligned.isna().all():
+            missing.append(country)
+        elif missing_opts["fill_long_gaps"] and longest_gap > interpolate_gaps_duration:
+            missing.append(country)
+            logger.warning(
+                "%s: %d/%d valid snapshots, longest gap %d exceeds limit %d; "
+                "replacing the whole demand profile.",
+                country, aligned.notna().sum(), len(aligned),
+                longest_gap, interpolate_gaps_duration,
+            )
     if not missing:
         return el_load
 
@@ -442,10 +453,12 @@ def fill_missing_demand(
         for value in [missing_opts["gdp"], missing_opts["pop"]]
     ):
         raise ValueError("fill_missing.gdp and pop must be positive reference totals.")
-    if reference not in available:
-        raise ValueError(f"{reference}: no reference demand at target snapshots.")
-    
-    base = el_load.loc[el_load.region_code == reference, "Electricity demand"]
+    if reference in missing:
+        raise ValueError(f"{reference}: reference demand cannot fall back to itself.")
+    base = align_demand_profile(
+        el_load.loc[el_load.region_code == reference, "Electricity demand"],
+        snapshots, reference, max_gap=interpolate_gaps_duration,
+    )
     filled = []
     for country in missing:
         # Sum administrative GDP and population totals for the missing country.
@@ -564,7 +577,8 @@ def build_demand_profiles(
     shapes["geometry"] = shapes["geometry"].apply(lambda x: make_valid(x))
 
     el_load = fill_missing_demand(
-        el_load, countries, shapes, fill_missing, n.snapshots, weights=weights
+        el_load, countries, shapes, fill_missing, n.snapshots, weights=weights,
+        interpolate_gaps_duration=interpolate_gaps_duration,
     )
 
     # filter load for analysed countries

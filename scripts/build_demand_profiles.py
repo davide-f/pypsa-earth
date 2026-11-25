@@ -86,6 +86,7 @@ from _helpers import (
     create_logger,
     read_csv_nafix,
     read_osm_config,
+    to_csv_nafix,
 )
 from shapely.prepared import prep
 from shapely.validation import make_valid
@@ -647,7 +648,9 @@ def build_demand_profiles(
     demand_profiles = demand_profiles.reindex(n.snapshots)
     if not np.isfinite(demand_profiles.to_numpy()).all():
         raise ValueError("Distributed demand profiles contain invalid values.")
-    demand_profiles.to_csv(out_path, header=True)
+    to_csv_nafix(
+        demand_profiles, out_path, header=True, date_format="%Y-%m-%d %H:%M:%S"
+    )
 
     logger.info(f"Demand_profiles csv file created for the corresponding snapshots.")
 
